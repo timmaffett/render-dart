@@ -108,24 +108,25 @@ For Node APIs beyond HTTP, use `dart:js_interop` directly.
 
 ### WebAssembly
 
-Some wasm-backed packages work; some cannot. The distinction is **how the
-module is executed**, not whether wasm is involved:
+Wasm-backed packages work, including ones that carry their own wasm runtime —
+but how much the runtime has to provide differs:
 
-| | Works? | Why |
+| | Needs | Verified |
 | --- | --- | --- |
-| Uses the platform's own `WebAssembly` API (`forge2d`) | **yes** | Node has `WebAssembly` and `fetch`; only asset resolution was missing |
-| Bootstraps its own wasm runtime through the DOM (`rust_crypto` → `wasm_run`) | **no** | Injects a `<script>` tag into an HTML document to load its runtime — browser-only, and Node has no DOM |
+| Uses the platform's `WebAssembly` API (`forge2d`) | asset resolution only | Box2D v3, zero config |
+| Carries a JS wasm runtime (`rust_crypto` → `wasm_run`) | asset resolution, `XMLHttpRequest`, and two pre-seeded globals | SHA/MD5/HMAC, cross-checked against pure-Dart `crypto` |
 
-`rust_crypto` is the instructive failure. It compiles under dart2js and ships a
-308 KB module, but its runtime dependency `wasm_run` executes wasm using a Rust
-interpreter that it loads by DOM script injection. No amount of asset
-resolution helps; the model assumes a browser page. Pure-Dart `crypto` and
-`pointycastle` cover the same ground — SHA/MD5/HMAC, AES-GCM, Argon2 — and work
-here today.
+`wasm_run` looks browser-only at first: it loads its WASI shim by injecting a
+`<script>` tag into an HTML document. But its setup checks whether the global
+is *already* present and skips injection if so — so seeding
+`globalThis.wasmFeatureDetect` (shipped inside the pub package) and
+`globalThis.browser_wasi_shim` (the `@bjorn3/browser_wasi_shim` npm package)
+removes the only reason it wanted a DOM. It then loads its module over
+`XMLHttpRequest`, which the runtime provides on top of `fetch`.
 
-A useful proxy before adopting a package: check its pub.dev platform tags. A
-package without `platform:web` will not work, and one with it still may not if
-its web support means *browser* specifically.
+Its native path is genuinely unavailable — that one needs `dart:ffi` and a
+wasmtime binary. The web executor is what runs here, on the host's own
+`WebAssembly`.
 
 `forge2d` — a `dart:ffi` binding to Box2D v3 — selects a bundled 227 KB
 WebAssembly build under dart2js, and runs on Render unchanged:
