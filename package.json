@@ -1,6 +1,6 @@
 {
   "name": "render-dart",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Write Render Workflows tasks in Dart, compiled to JavaScript and run by Render's official SDK.",
   "license": "MIT",
   "repository": {
@@ -20,7 +20,8 @@
   "exports": {
     ".": "./src/runtime.js",
     "./runtime": "./src/runtime.js",
-    "./toolchain": "./src/toolchain/index.js"
+    "./toolchain": "./src/toolchain/index.js",
+    "./package.json": "./package.json"
   },
   "files": [
     "src",
