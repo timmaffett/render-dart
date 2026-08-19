@@ -116,18 +116,20 @@ and it runs on Render unchanged:
 await initializeForge2D(wasmUri: Uri.parse(fileUri('web/box2d.wasm')));
 ```
 
-Two pieces make that work. Node's `fetch` has no `file:` support, so the
-runtime adds it — without that, any package loading a bundled asset through
-`fetch` simply cannot find it. And `fileUri()` resolves a project-relative path
-for you.
+No configuration, no staging step, no `wasmUri`.
 
-Staging the asset needs Dart, which on Render does not exist until
-`render-dart` has fetched it — so a `prepare` command cannot just be chained
-ahead of the build. Declare it instead, and it runs with the resolved SDK on
-`PATH`:
+A Dart web app serves each package's `lib/` at `packages/<name>/`, and packages
+that ship assets ask for them at exactly that path. Nothing serves it under
+Node, so the request fails. The runtime resolves those paths from
+`.dart_tool/package_config.json` — written by `dart pub get`, so the mapping is
+exact rather than guessed — and reads the file directly. Node's `fetch` also
+has no `file:` scheme, which the runtime adds for the same reason.
 
-```json
-{ "renderDart": { "prepare": "dart run forge2d:setup_web" } }
+For assets of your own rather than a package's, `fileUri()` resolves a
+project-relative path:
+
+```dart
+final data = await http.get(Uri.parse(fileUri('data/table.json')));
 ```
 
 `node:wasi` is not required: forge2d supplies its own WASI shims. It is

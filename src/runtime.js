@@ -22,12 +22,62 @@ const { task, startTaskServer } = require('@renderinc/sdk/workflows');
 // fails *silently* -- the program prints nothing and exits 0.
 globalThis.self ??= globalThis;
 
+/**
+ * Resolves Dart's web package-asset convention against the real pub layout.
+ *
+ * A Dart web app serves a package's lib/ directory at `packages/<name>/`, and
+ * packages that ship assets ask for them at exactly that path. Nothing serves
+ * it under Node, so those requests fail -- which is why a package like forge2d
+ * cannot find its bundled wasm module here.
+ *
+ * `.dart_tool/package_config.json`, written by `dart pub get`, maps every
+ * package to its root, so the mapping can be reconstructed exactly rather than
+ * guessed. Read lazily and cached: most tasks never load an asset.
+ */
+let packageRootsPromise;
+
+function packageRoots() {
+  packageRootsPromise ??= (async () => {
+    const configPath = path.resolve(
+      process.cwd(),
+      '.dart_tool',
+      'package_config.json',
+    );
+    try {
+      const config = JSON.parse(await readFile(configPath, 'utf8'));
+      const roots = new Map();
+      for (const pkg of config.packages ?? []) {
+        // rootUri may be absolute, or relative to .dart_tool/.
+        const root = new URL(pkg.rootUri, pathToFileURL(configPath));
+        roots.set(pkg.name, new URL(pkg.packageUri ?? 'lib/', `${root}/`));
+      }
+      return roots;
+    } catch {
+      // No pub dependencies, or pub get has not run. Nothing to resolve.
+      return new Map();
+    }
+  })();
+  return packageRootsPromise;
+}
+
+/** `packages/<name>/<path>` or `package:<name>/<path>` -> a file: URL. */
+async function resolvePackageAsset(url) {
+  const match =
+    /^package:([A-Za-z_][A-Za-z0-9_]*)\/(.+)$/.exec(url) ??
+    /^\/?packages\/([A-Za-z_][A-Za-z0-9_]*)\/(.+)$/.exec(url);
+  if (!match) return null;
+
+  const [, name, rest] = match;
+  const libUri = (await packageRoots()).get(name);
+  return libUri ? new URL(rest, libUri).href : null;
+}
+
 // Node's fetch has no file: support, so Dart packages that load bundled
 // assets through fetch -- wasm modules especially -- cannot find them.
 // Teaching fetch the scheme makes those packages work unchanged; forge2d's
 // bundled Box2D wasm build loads this way, and so do several others.
 //
-// Everything that is not file: is delegated to the real fetch untouched.
+// Everything that is not file: or a package asset is delegated untouched.
 if (typeof globalThis.fetch === 'function' && !globalThis.fetch.__renderDartFilePatch) {
   const realFetch = globalThis.fetch;
 
@@ -39,14 +89,19 @@ if (typeof globalThis.fetch === 'function' && !globalThis.fetch.__renderDartFile
           ? input.href
           : (input && input.url) || String(input);
 
-    if (!url.startsWith('file:')) return realFetch(input, init);
+    let target = url;
+    if (!target.startsWith('file:')) {
+      const resolved = await resolvePackageAsset(target);
+      if (resolved === null) return realFetch(input, init);
+      target = resolved;
+    }
 
     try {
-      const bytes = await readFile(new URL(url));
+      const bytes = await readFile(new URL(target));
       return new Response(bytes, {
         status: 200,
         headers: {
-          'content-type': url.endsWith('.wasm')
+          'content-type': target.endsWith('.wasm')
             ? 'application/wasm'
             : 'application/octet-stream',
         },
