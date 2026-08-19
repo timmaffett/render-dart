@@ -108,9 +108,27 @@ For Node APIs beyond HTTP, use `dart:js_interop` directly.
 
 ### WebAssembly
 
-Packages that ship a wasm module for the web work too. `forge2d` — a `dart:ffi`
-binding to Box2D v3 — selects a bundled 227 KB WebAssembly build under dart2js,
-and it runs on Render unchanged:
+Some wasm-backed packages work; some cannot. The distinction is **how the
+module is executed**, not whether wasm is involved:
+
+| | Works? | Why |
+| --- | --- | --- |
+| Uses the platform's own `WebAssembly` API (`forge2d`) | **yes** | Node has `WebAssembly` and `fetch`; only asset resolution was missing |
+| Bootstraps its own wasm runtime through the DOM (`rust_crypto` → `wasm_run`) | **no** | Injects a `<script>` tag into an HTML document to load its runtime — browser-only, and Node has no DOM |
+
+`rust_crypto` is the instructive failure. It compiles under dart2js and ships a
+308 KB module, but its runtime dependency `wasm_run` executes wasm using a Rust
+interpreter that it loads by DOM script injection. No amount of asset
+resolution helps; the model assumes a browser page. Pure-Dart `crypto` and
+`pointycastle` cover the same ground — SHA/MD5/HMAC, AES-GCM, Argon2 — and work
+here today.
+
+A useful proxy before adopting a package: check its pub.dev platform tags. A
+package without `platform:web` will not work, and one with it still may not if
+its web support means *browser* specifically.
+
+`forge2d` — a `dart:ffi` binding to Box2D v3 — selects a bundled 227 KB
+WebAssembly build under dart2js, and runs on Render unchanged:
 
 ```dart
 await initializeForge2D(wasmUri: Uri.parse(fileUri('web/box2d.wasm')));
