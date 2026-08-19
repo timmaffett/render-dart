@@ -1,0 +1,15 @@
+{
+  "name": "dart-workflow",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "render-dart build",
+    "start": "node index.js",
+    "dev": "render-dart dev"
+  },
+  "dependencies": {
+    "@renderinc/sdk": "^0.6.0",
+    "render-dart": "^0.1.0"
+  },
+  "engines": { "node": ">=18" }
+}
