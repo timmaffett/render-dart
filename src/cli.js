@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // render-dart CLI: build, dev, init.
 
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { cp, mkdir, readFile, rename, writeFile } = require('node:fs/promises');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
@@ -33,6 +33,7 @@ async function config(root) {
     optimize: c.optimize ?? 'O2',
     sourceMaps: c.sourceMaps ?? false,
     allowDartIo: c.allowDartIo ?? false,
+    prepare: c.prepare ?? null,
   };
 }
 
@@ -79,6 +80,29 @@ async function build(root, { force = false } = {}) {
   let pubCache;
   if (existsSync(path.join(root, 'pubspec.yaml'))) {
     pubCache = pubGet(dart, root, log);
+  }
+
+  // A hook for work that needs Dart but must run before compiling -- staging
+  // a package's bundled assets, for instance (`dart run forge2d:setup_web`).
+  //
+  // It exists because of a chicken-and-egg: on Render there is no Dart on PATH
+  // until render-dart has fetched one, so such a command cannot simply be
+  // chained ahead of `render-dart build` in package.json. Here the resolved
+  // SDK is put on PATH first.
+  if (c.prepare) {
+    log(`prepare: ${c.prepare}`);
+    const dartBin = dart === 'dart' ? null : path.dirname(dart);
+    const result = spawnSync(c.prepare, {
+      cwd: root,
+      shell: true,
+      stdio: 'inherit',
+      env: dartBin
+        ? { ...process.env, PATH: `${dartBin}${path.delimiter}${process.env.PATH}`, PUB_CACHE: pubCache ?? process.env.PUB_CACHE }
+        : { ...process.env, PUB_CACHE: pubCache ?? process.env.PUB_CACHE },
+    });
+    if (result.status !== 0) {
+      fail(`prepare command failed with exit code ${result.status}`);
+    }
   }
 
   await compile({
@@ -172,7 +196,7 @@ Usage:
   render-dart init [dir]        Scaffold a new Dart workflow project
 
 Configure via "renderDart" in package.json:
-  entry, out, dartVersion, optimize, sourceMaps
+  entry, out, dartVersion, optimize, sourceMaps, allowDartIo, prepare
 `);
       process.exit(command ? 1 : 0);
   }

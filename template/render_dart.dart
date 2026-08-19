@@ -17,6 +17,20 @@ external JSPromise<JSAny?> _callTask(String name, JSArray args);
 @JS('__start')
 external JSPromise<JSAny?> _start();
 
+@JS('__fileUri')
+external String _fileUri(String relativePath);
+
+/// Resolves a project-relative path to a `file:` URI.
+///
+/// Useful for packages that load bundled assets through `fetch`. Node's fetch
+/// has no `file:` support of its own; the render-dart runtime adds it, so a
+/// URI from here can be handed straight to such a package:
+///
+/// ```dart
+/// await initializeForge2D(wasmUri: Uri.parse(fileUri('web/box2d.wasm')));
+/// ```
+String fileUri(String relativePath) => _fileUri(relativePath);
+
 /// How Render should retry a failing task.
 class Retry {
   const Retry({required this.maxRetries, this.waitDurationMs, this.backoffScaling});

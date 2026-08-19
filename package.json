@@ -1,6 +1,6 @@
 {
   "name": "render-dart",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Write Render Workflows tasks in Dart, compiled to JavaScript and run by Render's official SDK.",
   "license": "MIT",
   "repository": {

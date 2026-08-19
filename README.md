@@ -106,6 +106,33 @@ first. `render-dart build` therefore refuses to build a project that imports
 
 For Node APIs beyond HTTP, use `dart:js_interop` directly.
 
+### WebAssembly
+
+Packages that ship a wasm module for the web work too. `forge2d` — a `dart:ffi`
+binding to Box2D v3 — selects a bundled 227 KB WebAssembly build under dart2js,
+and it runs on Render unchanged:
+
+```dart
+await initializeForge2D(wasmUri: Uri.parse(fileUri('web/box2d.wasm')));
+```
+
+Two pieces make that work. Node's `fetch` has no `file:` support, so the
+runtime adds it — without that, any package loading a bundled asset through
+`fetch` simply cannot find it. And `fileUri()` resolves a project-relative path
+for you.
+
+Staging the asset needs Dart, which on Render does not exist until
+`render-dart` has fetched it — so a `prepare` command cannot just be chained
+ahead of the build. Declare it instead, and it runs with the resolved SDK on
+`PATH`:
+
+```json
+{ "renderDart": { "prepare": "dart run forge2d:setup_web" } }
+```
+
+`node:wasi` is not required: forge2d supplies its own WASI shims. It is
+available in Node if a module ever needs the real thing.
+
 ## Two things this package exists to get right
 
 **`RENDER_SDK_AUTO_START` must be `false` before the SDK loads.** The SDK's

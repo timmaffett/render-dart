@@ -14,10 +14,65 @@
 process.env.RENDER_SDK_AUTO_START = 'false';
 
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { readFile } = require('node:fs/promises');
 const { task, startTaskServer } = require('@renderinc/sdk/workflows');
 
-// dart2js output expects `self` to exist.
+// dart2js output expects `self` to exist. Without it the async scheduler
+// fails *silently* -- the program prints nothing and exits 0.
 globalThis.self ??= globalThis;
+
+// Node's fetch has no file: support, so Dart packages that load bundled
+// assets through fetch -- wasm modules especially -- cannot find them.
+// Teaching fetch the scheme makes those packages work unchanged; forge2d's
+// bundled Box2D wasm build loads this way, and so do several others.
+//
+// Everything that is not file: is delegated to the real fetch untouched.
+if (typeof globalThis.fetch === 'function' && !globalThis.fetch.__renderDartFilePatch) {
+  const realFetch = globalThis.fetch;
+
+  const patched = async (input, init) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input && input.url) || String(input);
+
+    if (!url.startsWith('file:')) return realFetch(input, init);
+
+    try {
+      const bytes = await readFile(new URL(url));
+      return new Response(bytes, {
+        status: 200,
+        headers: {
+          'content-type': url.endsWith('.wasm')
+            ? 'application/wasm'
+            : 'application/octet-stream',
+        },
+      });
+    } catch (e) {
+      // Match fetch's contract: a missing file is a 404, not a throw, so
+      // callers trying several candidate URLs can keep going.
+      if (e.code === 'ENOENT' || e.code === 'EISDIR') {
+        return new Response(null, { status: 404, statusText: 'Not Found' });
+      }
+      throw e;
+    }
+  };
+
+  patched.__renderDartFilePatch = true;
+  globalThis.fetch = patched;
+}
+
+/**
+ * Turns a project-relative path into a file: URL the patched fetch can read.
+ *
+ * Exposed to Dart so a task can point a package at a bundled asset, e.g.
+ * `initializeForge2D(wasmUri: Uri.parse(fileUri('web/box2d.wasm')))`.
+ */
+globalThis.__fileUri = (relativePath) =>
+  pathToFileURL(path.resolve(process.cwd(), relativePath)).href;
 
 /** Registered tasks, by name, as returned by the SDK's task(). */
 const wrapped = Object.create(null);
