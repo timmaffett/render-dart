@@ -2,7 +2,7 @@
 // render-dart CLI: build, dev, init.
 
 const { spawn } = require('node:child_process');
-const { cp, mkdir, readFile, writeFile } = require('node:fs/promises');
+const { cp, mkdir, readFile, rename, writeFile } = require('node:fs/promises');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
 
@@ -125,6 +125,11 @@ async function init(root, args) {
 
   await mkdir(target, { recursive: true });
   await cp(path.join(__dirname, '..', 'template'), target, { recursive: true });
+
+  // npm strips .gitignore from published packages, so the template ships it
+  // as `gitignore` and it gets its real name back here.
+  const shipped = path.join(target, 'gitignore');
+  if (existsSync(shipped)) await rename(shipped, path.join(target, '.gitignore'));
 
   // Name the project after its directory.
   const pkgPath = path.join(target, 'package.json');
