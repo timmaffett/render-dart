@@ -15,110 +15,12 @@ process.env.RENDER_SDK_AUTO_START = 'false';
 
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { readFile } = require('node:fs/promises');
 const { task, startTaskServer } = require('@renderinc/sdk/workflows');
+const { installWebShims, ensureWasmRunGlobals } = require('./web-shims');
 
-// dart2js output expects `self` to exist. Without it the async scheduler
-// fails *silently* -- the program prints nothing and exits 0.
-globalThis.self ??= globalThis;
-
-/**
- * Resolves Dart's web package-asset convention against the real pub layout.
- *
- * A Dart web app serves a package's lib/ directory at `packages/<name>/`, and
- * packages that ship assets ask for them at exactly that path. Nothing serves
- * it under Node, so those requests fail -- which is why a package like forge2d
- * cannot find its bundled wasm module here.
- *
- * `.dart_tool/package_config.json`, written by `dart pub get`, maps every
- * package to its root, so the mapping can be reconstructed exactly rather than
- * guessed. Read lazily and cached: most tasks never load an asset.
- */
-let packageRootsPromise;
-
-function packageRoots() {
-  packageRootsPromise ??= (async () => {
-    const configPath = path.resolve(
-      process.cwd(),
-      '.dart_tool',
-      'package_config.json',
-    );
-    try {
-      const config = JSON.parse(await readFile(configPath, 'utf8'));
-      const roots = new Map();
-      for (const pkg of config.packages ?? []) {
-        // rootUri may be absolute, or relative to .dart_tool/.
-        const root = new URL(pkg.rootUri, pathToFileURL(configPath));
-        roots.set(pkg.name, new URL(pkg.packageUri ?? 'lib/', `${root}/`));
-      }
-      return roots;
-    } catch {
-      // No pub dependencies, or pub get has not run. Nothing to resolve.
-      return new Map();
-    }
-  })();
-  return packageRootsPromise;
-}
-
-/** `packages/<name>/<path>` or `package:<name>/<path>` -> a file: URL. */
-async function resolvePackageAsset(url) {
-  const match =
-    /^package:([A-Za-z_][A-Za-z0-9_]*)\/(.+)$/.exec(url) ??
-    /^\/?packages\/([A-Za-z_][A-Za-z0-9_]*)\/(.+)$/.exec(url);
-  if (!match) return null;
-
-  const [, name, rest] = match;
-  const libUri = (await packageRoots()).get(name);
-  return libUri ? new URL(rest, libUri).href : null;
-}
-
-// Node's fetch has no file: support, so Dart packages that load bundled
-// assets through fetch -- wasm modules especially -- cannot find them.
-// Teaching fetch the scheme makes those packages work unchanged; forge2d's
-// bundled Box2D wasm build loads this way, and so do several others.
-//
-// Everything that is not file: or a package asset is delegated untouched.
-if (typeof globalThis.fetch === 'function' && !globalThis.fetch.__renderDartFilePatch) {
-  const realFetch = globalThis.fetch;
-
-  const patched = async (input, init) => {
-    const url =
-      typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.href
-          : (input && input.url) || String(input);
-
-    let target = url;
-    if (!target.startsWith('file:')) {
-      const resolved = await resolvePackageAsset(target);
-      if (resolved === null) return realFetch(input, init);
-      target = resolved;
-    }
-
-    try {
-      const bytes = await readFile(new URL(target));
-      return new Response(bytes, {
-        status: 200,
-        headers: {
-          'content-type': target.endsWith('.wasm')
-            ? 'application/wasm'
-            : 'application/octet-stream',
-        },
-      });
-    } catch (e) {
-      // Match fetch's contract: a missing file is a 404, not a throw, so
-      // callers trying several candidate URLs can keep going.
-      if (e.code === 'ENOENT' || e.code === 'EISDIR') {
-        return new Response(null, { status: 404, statusText: 'Not Found' });
-      }
-      throw e;
-    }
-  };
-
-  patched.__renderDartFilePatch = true;
-  globalThis.fetch = patched;
-}
+// Node lacks several APIs Dart packages assume: `self`, a `file:` scheme for
+// fetch, Dart's packages/<name>/ asset paths, and XMLHttpRequest.
+installWebShims();
 
 /**
  * Turns a project-relative path into a file: URL the patched fetch can read.
@@ -146,6 +48,9 @@ const wrapped = Object.create(null);
  */
 globalThis.__registerTask = (name, fn, options) => {
   wrapped[name] = task({ name, ...(options ?? {}) }, async (...args) => {
+    // Cached, so this is a no-op after the first task and costs nothing at all
+    // for projects that do not depend on wasm_run.
+    await ensureWasmRunGlobals();
     const env = await fn(args);
     if (env && env.$err !== undefined) throw new Error(env.$err);
     return env ? env.$ok : undefined;

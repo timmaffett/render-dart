@@ -118,15 +118,26 @@ but how much the runtime has to provide differs:
 
 `wasm_run` looks browser-only at first: it loads its WASI shim by injecting a
 `<script>` tag into an HTML document. But its setup checks whether the global
-is *already* present and skips injection if so — so seeding
-`globalThis.wasmFeatureDetect` (shipped inside the pub package) and
-`globalThis.browser_wasi_shim` (the `@bjorn3/browser_wasi_shim` npm package)
-removes the only reason it wanted a DOM. It then loads its module over
-`XMLHttpRequest`, which the runtime provides on top of `fetch`.
+is *already* present and skips injection if so. The runtime seeds both:
+`wasmFeatureDetect` comes from a UMD bundle shipped inside the pub package, and
+`browser_wasi_shim` from npm. It then loads its module over `XMLHttpRequest`,
+which the runtime also provides, on top of `fetch`.
 
-Its native path is genuinely unavailable — that one needs `dart:ffi` and a
-wasmtime binary. The web executor is what runs here, on the host's own
-`WebAssembly`.
+For `wasm_run`-based packages, add the shim to your project — it is an
+*optional* peer dependency, so nothing else pays for it:
+
+```bash
+npm install @bjorn3/browser_wasi_shim
+```
+
+Then the package works unmodified, with no `loadModule` callback and no other
+setup. Its **native** path stays unavailable, needing `dart:ffi` and a wasmtime
+binary; the web executor is what runs here, on the host's own `WebAssembly`.
+
+One caveat worth knowing before combining packages: `rust_crypto` and
+`forge2d 0.15` cannot share a pubspec, because `wasm_run` pulls
+`build_rust_binaries` → `hooks ^1.0.0` while forge2d needs `hooks ^2.0.0`. Put
+them in separate workflows.
 
 `forge2d` — a `dart:ffi` binding to Box2D v3 — selects a bundled 227 KB
 WebAssembly build under dart2js, and runs on Render unchanged:
@@ -184,6 +195,8 @@ Use *Clear build cache & deploy* in the Dashboard to force a clean fetch.
 ## Layout
 
     src/runtime.js        Loaded by your workflow; bridges Dart to the SDK
+    src/web-shims.js      Browser-shaped APIs Node lacks: self, file: fetch,
+                          Dart package assets, XMLHttpRequest
     src/cli.js            build / dev / init
     src/toolchain/        SDK resolution and compilation, free of Render
                           specifics so it can be extracted later
