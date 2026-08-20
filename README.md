@@ -1,6 +1,10 @@
 # render-dart
 
-Write [Render Workflows](https://render.com/docs/workflows) tasks in **Dart**.
+> **Unofficial.** An independent project, not affiliated with, endorsed by, or
+> supported by [Render](https://render.com).
+
+Write [Render Workflows](https://render.com/docs/workflows) tasks in **Dart**,
+on [Render](https://render.com).
 
 Render has no Dart runtime — its workflow runtimes are Node, Python, Go, Ruby
 and Elixir. Rather than reach for Docker (which loses API provisioning and
