@@ -31,6 +31,102 @@ external String _fileUri(String relativePath);
 /// ```
 String fileUri(String relativePath) => _fileUri(relativePath);
 
+@JS('__require')
+external JSObject _require(String id);
+
+@JS('__run')
+external JSPromise<JSObject> _run(String command, JSArray args, JSObject options);
+
+/// Loads an npm package or Node built-in, by name.
+///
+/// This is how a Dart task reaches the npm ecosystem. Bind what you need with
+/// an extension type:
+///
+/// ```dart
+/// @JS()
+/// extension type _Crypto(JSObject _) implements JSObject {
+///   external String randomUUID();
+/// }
+///
+/// final crypto = _Crypto(requireModule('node:crypto'));
+/// print(crypto.randomUUID());
+/// ```
+///
+/// Dart cannot call `require` directly — in CommonJS it is module-scoped, and
+/// `globalThis.require` is undefined — so the runtime hoists it for us.
+JSObject requireModule(String id) => _require(id);
+
+/// What a finished process left behind.
+class ProcessResult {
+  const ProcessResult({
+    required this.exitCode,
+    required this.stdout,
+    required this.stderr,
+    this.signal,
+  });
+
+  /// The process's exit code, or -1 if it was killed before exiting.
+  final int exitCode;
+  final String stdout;
+  final String stderr;
+
+  /// The signal that killed the process, if one did.
+  final String? signal;
+
+  bool get ok => exitCode == 0;
+
+  @override
+  String toString() => 'ProcessResult(exitCode: $exitCode'
+      '${signal == null ? '' : ', signal: $signal'})';
+}
+
+/// Runs [command] to completion and captures its output.
+///
+/// `dart:io` compiles under dart2js and then fails at runtime, so `Process` is
+/// unavailable here. This is the way to shell out — to a CLI tool, or to a
+/// natively compiled Dart binary shipped alongside the workflow.
+///
+/// A non-zero exit is returned, not thrown: an exit code is a result, and the
+/// caller usually wants [ProcessResult.stderr] with it. It throws only when the
+/// process could not be started, or when [timeout] elapses.
+///
+/// ```dart
+/// final result = await runProcess('git', args: ['rev-parse', 'HEAD']);
+/// if (result.ok) print(result.stdout.trim());
+/// ```
+Future<ProcessResult> runProcess(
+  String command, {
+  List<String> args = const [],
+  String? workingDirectory,
+  Map<String, String>? environment,
+  String? stdin,
+  Duration? timeout,
+  bool runInShell = false,
+}) async {
+  final options = JSObject();
+  if (workingDirectory != null) options['cwd'] = workingDirectory.toJS;
+  if (stdin != null) options['stdin'] = stdin.toJS;
+  if (timeout != null) options['timeoutMs'] = timeout.inMilliseconds.toJS;
+  if (runInShell) options['shell'] = true.toJS;
+  if (environment != null) {
+    final env = JSObject();
+    environment.forEach((key, value) => env[key] = value.toJS);
+    options['env'] = env;
+  }
+
+  final raw = await _run(command, args.map((a) => a.toJS).toList().toJS, options)
+      .toDart;
+
+  return ProcessResult(
+    exitCode: (raw['code']! as JSNumber).toDartInt,
+    stdout: (raw['stdout']! as JSString).toDart,
+    stderr: (raw['stderr']! as JSString).toDart,
+    signal: raw['signal'].isUndefinedOrNull
+        ? null
+        : (raw['signal']! as JSString).toDart,
+  );
+}
+
 /// How Render should retry a failing task.
 class Retry {
   const Retry({required this.maxRetries, this.waitDurationMs, this.backoffScaling});

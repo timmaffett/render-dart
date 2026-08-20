@@ -165,6 +165,43 @@ final data = await http.get(Uri.parse(fileUri('data/table.json')));
 `node:wasi` is not required: forge2d supplies its own WASI shims. It is
 available in Node if a module ever needs the real thing.
 
+## Reaching Node from a task
+
+`dart:io` compiles under dart2js and then throws at runtime, so a task cannot
+open a file, spawn a process, or reach the npm ecosystem on its own. Two
+helpers close that gap.
+
+**Any npm package or Node built-in:**
+
+```dart
+@JS()
+extension type _Crypto(JSObject _) implements JSObject {
+  external String randomUUID();
+}
+
+final crypto = _Crypto(requireModule('node:crypto'));
+print(crypto.randomUUID());
+```
+
+Dart cannot call `require` itself — in CommonJS it is module-scoped, and
+`globalThis.require` is undefined in both CommonJS and ESM — so the runtime
+hoists it. Resolution is rooted at your project directory, so
+`requireModule('lodash')` means whatever *your* package.json depends on.
+
+**Shelling out**, to a CLI tool or to a natively compiled Dart binary shipped
+alongside the workflow:
+
+```dart
+final result = await runProcess('git', args: ['rev-parse', 'HEAD']);
+if (result.ok) print(result.stdout.trim());
+```
+
+`runProcess` takes `args`, `workingDirectory`, `environment`, `stdin`,
+`timeout` and `runInShell`. A non-zero exit is **returned, not thrown** — an
+exit code is a result, and the caller usually wants `stderr` with it. It throws
+only when the process could not be started, or when `timeout` elapses (SIGKILL,
+since a task run is already bounded by Render's own timeout).
+
 ## Two things this package exists to get right
 
 **`RENDER_SDK_AUTO_START` must be `false` before the SDK loads.** The SDK's
@@ -197,6 +234,7 @@ Use *Clear build cache & deploy* in the Dashboard to force a clean fetch.
     src/runtime.js        Loaded by your workflow; bridges Dart to the SDK
     src/web-shims.js      Browser-shaped APIs Node lacks: self, file: fetch,
                           Dart package assets, XMLHttpRequest
+    src/node-bridge.js    Node access Dart lacks: require, subprocesses
     src/cli.js            build / dev / init
     src/toolchain/        SDK resolution and compilation, free of Render
                           specifics so it can be extracted later
