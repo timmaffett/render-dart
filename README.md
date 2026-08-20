@@ -1,15 +1,13 @@
 # render-dart
 
-> **This is an unofficial, independent, community-built package.**
+> **This is an _unofficial_, independent, community-built package.**
 > Not affiliated with, endorsed by, or supported by
 > [Render](https://render.com).
 >
 > Render's own SDKs and documentation are at
 > [render.com/docs](https://render.com/docs).
 
-[![Render](https://raw.githubusercontent.com/timmaffett/render-dart/main/doc/render-logo.png)](https://render.com)
-
-[\*note](#note)
+[![Render](https://raw.githubusercontent.com/timmaffett/render-dart/main/doc/render-logo.png)](https://render.com) [\*](#note)
 
 Write [Render Workflows](https://render.com/docs/workflows) tasks in **Dart**,
 on [Render](https://render.com).
@@ -19,12 +17,8 @@ no built-in way to use Dart: tasks are defined with Render's own SDK, which is
 available for **TypeScript and Python** only. Their docs say SDKs for more
 languages are planned.
 
-The gap is the SDK rather than the runtime — a workflow service can run on
-`node`, `python`, `go`, `ruby` or `elixir`, but without an SDK for your
-language there is nothing to register tasks with.
-
-`render-dart` closes it from the other side, without reaching for Docker (which
-would cost API provisioning and local development). It compiles Dart **two
+`render-dart` provides first class dart language support, without reaching for Docker (which
+would cost API provisioning and local development). It can compile Dart **two
 ways**:
 
 - **Task bodies to JavaScript**, with `dart compile js`, registered through
@@ -40,13 +34,13 @@ is committed. You get real static analysis over the whole thing.
 
 ## The Dart side of Render
 
-This package covers **writing** tasks. Two companion Dart packages cover the
-rest, and neither is required to use this one:
+This package covers **writing** workflow tasks. Two companion Dart packages optionally provide
+access to render's apis (neither are required to use this one):
 
 | | |
 | --- | --- |
 | `render-dart` (this) | **Writing** tasks in Dart |
-| [`render_workflows`](https://pub.dev/packages/render_workflows) | **Running** them — start, watch, cancel, fan out |
+| [`render_workflows`](https://pub.dev/packages/render_workflows) | **Running** workflows/tasks — start, watch, cancel, fan out |
 | [`render_api`](https://pub.dev/packages/render_api) | **Managing** the services — create, deploy, inspect |
 
 So a Flutter app can trigger a task with `render_workflows` that a Dart
