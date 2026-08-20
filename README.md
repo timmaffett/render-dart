@@ -121,8 +121,15 @@ For Node APIs beyond HTTP, use `dart:js_interop` directly.
 
 ### WebAssembly
 
-Wasm-backed packages work, including ones that carry their own wasm runtime —
-but how much the runtime has to provide differs:
+Packages that ship a `.wasm` module work, and they are often the **simpler**
+choice: the module runs inside the Node process, so there is no subprocess, no
+second binary, and no build step beyond the one you already have.
+
+When a package has no wasm build — or the work needs files, sockets or more
+than one core — [native tasks](#two-ways-past-dart2js) are the other route.
+
+Two shapes, both verified on Render, differing in how much the runtime has to
+supply:
 
 | | Needs | Verified |
 | --- | --- | --- |
@@ -215,11 +222,59 @@ exit code is a result, and the caller usually wants `stderr` with it. It throws
 only when the process could not be started, or when `timeout` elapses (SIGKILL,
 since a task run is already bounded by Render's own timeout).
 
+## Two ways past dart2js
+
+dart2js cannot open a file, use a second core, or run a package that needs
+`dart:io`. There are two escapes, and they are complementary rather than
+ranked.
+
+| | WebAssembly | Native task |
+| --- | --- | --- |
+| Runs in | the Node process | a subprocess |
+| Needs | the package to ship a `.wasm` | nothing — any Dart compiles |
+| `dart:io`, sockets, files | no | **yes** |
+| `dart:ffi` | no | **yes** |
+| More than one core | no | **yes**, isolates |
+| Per-call cost | none | ~0.5 ms with a worker |
+| Extra artefact | none | a binary, built during the deploy |
+
+**Reach for wasm when the package already has one.** `forge2d` and
+`rust_crypto` both do, and `render-dart` resolves their modules without
+configuration. Nothing is spawned and nothing is compiled.
+
+**Reach for native when there is no wasm build, when the work needs I/O or
+FFI, or when it needs to use more than one core.** `package:postgres` is the
+clearest case: it speaks the wire protocol over a raw socket, and pub.dev marks
+it `runtime:native-aot` with no `runtime:web`. There is no wasm alternative and
+no dart2js path — native or nothing.
+
+### What native is *not*
+
+It is not a way to make computation faster. The same recursive fib, compiled
+both ways and run on Render:
+
+| n | dart2js | native |
+| --- | --- | --- |
+| 30 | 8 ms | 23 ms |
+| 34 | 60 ms | 50 ms |
+| 36 | 146 ms | 131 ms |
+
+V8 matches Dart AOT on pure integer work, and beats it at small n. If your task
+is arithmetic, dart2js is already fine.
+
+The speed win that *is* real is **parallelism**, because dart2js inherits
+JavaScript's single thread. Eight jobs of fib(32) on Render: **181 ms
+sequential against 81 ms across isolates.**
+
+Size that carefully. `Platform.numberOfProcessors` reports 32 on a Render
+instance, but the same test at 32 jobs returns only 1.3x against 2.2x at 8 —
+the container's CPU share is the ceiling, not the host's core count.
+
 ## Native tasks
 
-dart2js cannot give you `dart:io`, `dart:ffi` or real isolates. Native tasks
-do: write the function once, compile it AOT, and call it from task code as if
-it were local.
+Write the function once, compile it AOT, and call it from task code as if it
+were local — no process handling, no serialisation, nothing at the call site
+that says it is native.
 
 Write the implementation in `<name>_impl.dart`:
 
@@ -320,6 +375,52 @@ arrives as a `$log` line and is forwarded to the task log — on stdout it would
 corrupt the framing, so it is rerouted rather than left to break things. A
 native `throw` arrives as a `NativeTaskException` carrying the real message and
 the native stack trace.
+
+### A worked example: Postgres
+
+`package:postgres` speaks the wire protocol over a raw socket. pub.dev marks it
+`runtime:native-aot` and `runtime:native-jit`, with **no** `runtime:web` — it
+cannot run under dart2js at all, and there is no wasm build to fall back on.
+Native is the only route to a database from a Dart workflow.
+
+```dart
+// native/db_impl.dart
+@NativeTask(worker: true, idleTimeout: Duration(minutes: 2))
+Future<List<Map<String, Object?>>> listWidgets({int limit = 20}) async {
+  final db = await _db();                       // held open between calls
+  final rows = await db.execute(
+    Sql.named('select * from widgets limit @limit'),
+    parameters: {'limit': limit},
+  );
+  return rows.map(_jsonRow).toList();
+}
+```
+
+```dart
+// tasks.dart
+import 'native/db.dart';
+
+task('listWidgets', (args) async => await listWidgets(limit: 20));
+```
+
+Worker mode earns its keep here: the process stays alive, so the TCP handshake,
+TLS negotiation and Postgres authentication happen once rather than per call.
+`pg_backend_pid()` proves it from the server's side — it stays constant across
+calls while a counter climbs.
+
+Two things this example ran into, both worth knowing before you hit them:
+
+- **`timestamptz` arrives as a `DateTime`, which is not JSON.** Convert before
+  returning, or the build rejects the signature — the right failure, but a
+  puzzling one if unexpected.
+- **A held connection can be dropped** by the server, a deploy, or idling. Check
+  and reconnect rather than surfacing a broken socket; that is the honest cost
+  of keeping state in a worker.
+
+A full version, with a local seeding program that creates the table over the
+*external* connection string while the tasks read it over the *internal* one,
+is in
+[`render_postgres_example`](https://github.com/timmaffett/render_dart_workflow_test).
 
 ### `mode: "exe"`
 
