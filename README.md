@@ -24,6 +24,48 @@ render workflows tasks list --local
 render workflows start sumSquares --local --input='[[2,3,4]]'
 ```
 
+## Examples, which are also templates
+
+```bash
+npx render-dart init my-app --template postgres
+```
+
+| | Answers |
+| --- | --- |
+| [`default`](examples/default) | Writing a task, fanning out, retrying |
+| [`http`](examples/http) | Calling an external API |
+| [`native`](examples/native) | Files, subprocesses, FFI, more than one core |
+| [`postgres`](examples/postgres) | Reaching a database |
+| [`introspect`](examples/introspect) | Inspecting Render, or running a task in another workflow |
+
+Each is a complete service you can run, and `init` scaffolds from it — so a
+template that does not work is a test failure rather than a surprise.
+
+## Coding agents
+
+Agents never read `node_modules`, so nothing shipped inside this package
+reaches one helping in your project. `render-dart init` therefore writes an
+`AGENTS.md` (and a `CLAUDE.md` pointing at it) **into the project it creates**,
+covering the traps, when to reach for a native task, and how to get at a
+database.
+
+If you are an agent reading this page: the short version is that task bodies
+are dart2js, `dart:io` does not work there, `package:http` does, and anything
+needing files, FFI, a database or a second core goes through a native task —
+see [Two ways past dart2js](#two-ways-past-dart2js). Native is **not** faster
+at arithmetic.
+
+There is also a Claude skill in the repository at
+`.claude/skills/render-dart/`. It is not in the npm tarball, since skills are
+not loaded from `node_modules`:
+
+```bash
+cp -r render-dart/.claude/skills/render-dart ~/.claude/skills/
+```
+
+`AGENTS.md` in the repository root is guidance for working *on* this package,
+which is a different thing.
+
 ## Writing tasks
 
 ```dart
@@ -506,23 +548,6 @@ Use *Clear build cache & deploy* in the Dashboard to force a clean fetch.
                           so your project never depends on the analyzer
     template/             What `init` copies, including the two runtime files
                           (render_dart.dart, native_task.dart)
-
-## Using this with a coding agent
-
-The repository carries a Claude skill at `.claude/skills/render-dart/`, covering
-task authoring, native tasks, wasm-backed packages and troubleshooting. It is
-not in the npm tarball — skills are not loaded from `node_modules` — so copy it
-if you want it:
-
-```bash
-git clone https://github.com/timmaffett/render-dart
-cp -r render-dart/.claude/skills/render-dart ~/.claude/skills/
-```
-
-It complements Render's own `render-workflows` skill, which covers Python and
-TypeScript and does not know Dart is an option.
-
-`AGENTS.md` in the repository root is guidance for working *on* this package.
 
 ## Licence
 

@@ -3,7 +3,7 @@
 
 const { spawn } = require('node:child_process');
 const { cp, mkdir, readFile, rename, writeFile } = require('node:fs/promises');
-const { existsSync } = require('node:fs');
+const { existsSync, readdirSync, readFileSync } = require('node:fs');
 const path = require('node:path');
 
 const { version } = require('../package.json');
@@ -36,6 +36,10 @@ async function config(root) {
     optimize: c.optimize ?? 'O2',
     sourceMaps: c.sourceMaps ?? false,
     allowDartIo: c.allowDartIo ?? false,
+    // Directories whose dart:io use is legitimate — a local tool sitting
+    // beside the workflow, say. Narrower than allowDartIo, which switches the
+    // check off for task code too.
+    allowDartIoIn: c.allowDartIoIn ?? [],
     native: c.native ?? [],
   };
 }
@@ -76,6 +80,7 @@ async function build(root, { force = false } = {}) {
     // reachable from the dart2js entrypoint.
     const io = await findDartIoImports(root, [
       ...native.map((n) => n.dir),
+      ...c.allowDartIoIn.map((d) => path.resolve(root, d)),
       path.join(root, 'native_task.dart'),
     ]);
     if (io.length > 0) {
@@ -169,13 +174,77 @@ async function dev(root, args) {
   child.on('exit', (code) => process.exit(code ?? 0));
 }
 
-/** Copies the starter template into a new directory. */
+const EXAMPLES_DIR = path.join(__dirname, '..', 'examples');
+const RUNTIME_DIR = path.join(__dirname, '..', 'runtime');
+
+/** Template names, read from the directory rather than a hardcoded list. */
+function templates() {
+  return readdirSync(EXAMPLES_DIR, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
+}
+
+/** Copies an example into a new directory as a starting point. */
 async function init(root, args) {
-  const target = path.resolve(root, args[0] ?? 'dart-workflow');
+  // Templates are the examples, so every one of them is provably runnable —
+  // there is no second copy to drift.
+  const template = args.find((a) => a.startsWith('--template='))?.split('=')[1] ??
+      (args.includes('--template') ? args[args.indexOf('--template') + 1] : null) ??
+      'default';
+
+  const available = templates();
+  if (!available.includes(template)) {
+    fail(`No template named "${template}". Available: ${available.join(', ')}`);
+  }
+
+  const positional = args.filter((a, i) =>
+      !a.startsWith('--') && args[i - 1] !== '--template');
+  const target = path.resolve(root, positional[0] ?? 'dart-workflow');
   if (existsSync(target)) fail(`${target} already exists.`);
 
   await mkdir(target, { recursive: true });
-  await cp(path.join(__dirname, '..', 'template'), target, { recursive: true });
+  // An example is a working project, so its directory also holds build output
+  // and resolved dependencies. None of that belongs in a fresh scaffold, and
+  // copying a lockfile would pin someone to whatever was resolved here.
+  const skip = new Set([
+    'README.md',
+    'node_modules',
+    'build',
+    '.dart_tool',
+    'pubspec.lock',
+    'package-lock.json',
+  ]);
+
+  // The build writes a native/.gitignore naming what it generated. Reusing
+  // that list means a scaffold never carries a stale facade or stub, without
+  // this having to guess at their names.
+  const generatedList = path.join(EXAMPLES_DIR, template, 'native', '.gitignore');
+  if (existsSync(generatedList)) {
+    for (const line of readFileSync(generatedList, 'utf8').split('\n')) {
+      const name = line.trim();
+      if (name && !name.startsWith('#')) skip.add(name);
+    }
+  }
+
+  await cp(path.join(EXAMPLES_DIR, template), target, {
+    recursive: true,
+    filter: (src) => !skip.has(path.basename(src)),
+  });
+
+  // The Dart bridge files are not kept in the examples — `build` writes them
+  // when missing, which is also how they stay current on upgrade. A scaffold
+  // gets them up front so the project analyses before its first build.
+  for (const name of ['render_dart.dart', 'native_task.dart']) {
+    await cp(path.join(RUNTIME_DIR, name), path.join(target, name));
+  }
+
+  // Guidance for coding agents, in the one place they will reliably look.
+  // An agent helping in this project never opens node_modules, so nothing we
+  // ship inside the package reaches it.
+  for (const name of ['AGENTS.md', 'CLAUDE.md']) {
+    await cp(path.join(RUNTIME_DIR, name), path.join(target, name));
+  }
 
   // npm strips .gitignore from published packages, so the template ships it
   // as `gitignore` and it gets its real name back here.
@@ -227,10 +296,12 @@ async function main() {
 Usage:
   render-dart build [--force]   Compile tasks.dart to build/tasks.js
   render-dart dev [-- cmd...]   Build, then run the local task server
-  render-dart init [dir]        Scaffold a new Dart workflow project
+  render-dart init [dir] [--template <name>]
+                                Scaffold a new Dart workflow project
 
 Configure via "renderDart" in package.json:
-  entry, out, dartVersion, optimize, sourceMaps, allowDartIo
+  entry, out, dartVersion, optimize, sourceMaps, allowDartIo, allowDartIoIn,
+  native
 `);
       process.exit(command ? 1 : 0);
   }

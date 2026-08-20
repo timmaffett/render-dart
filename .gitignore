@@ -2,3 +2,19 @@ node_modules/
 *.log
 .DS_Store
 .env
+
+# Dart build output. The examples are working projects, so they accumulate all
+# of this; none of it belongs in git, and `init` filters it out of a scaffold
+# too.
+build/
+.dart_tool/
+pubspec.lock
+
+# Generated from the @nativeTask sources beside them. The build writes a
+# native/.gitignore naming them as well; this covers the pattern repo-wide.
+*.stub.dart
+
+# Not in the examples. They would pin someone cloning this repo to whatever
+# resolved on the day, which is how a stale render-dart version goes unnoticed.
+# `init` strips them from a scaffold regardless.
+examples/*/package-lock.json

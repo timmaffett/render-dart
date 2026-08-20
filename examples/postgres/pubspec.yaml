@@ -1,0 +1,14 @@
+name: render_dart_postgres_example
+description: Reading and writing Render Postgres from a Dart workflow task.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  # Speaks the Postgres wire protocol over a raw socket, so it needs dart:io.
+  # pub.dev marks it runtime:native-aot and native-jit, with no runtime:web —
+  # under dart2js it cannot run at all. That is why the tasks that use it are
+  # native, and it is the clearest case for native tasks existing.
+  postgres: ^3.5.12

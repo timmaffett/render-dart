@@ -37,7 +37,7 @@ function ensureGenerator(dart, pubCache, log) {
  * is exactly how the `^0.1.0` template pin went unnoticed for three releases.
  */
 function ensureRuntimeFile(root, name, log) {
-  const shipped = path.join(__dirname, '..', '..', 'template', name);
+  const shipped = path.join(__dirname, '..', '..', 'runtime', name);
   const local = path.join(root, name);
 
   if (!existsSync(local)) {

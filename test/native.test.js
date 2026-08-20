@@ -163,7 +163,7 @@ test('the generator rejects a parameter that cannot cross JSON', { skip: !dartOn
   );
   await writeFile(
     path.join(root, 'native_task.dart'),
-    await readFile(path.join(__dirname, '..', 'template', 'native_task.dart')),
+    await readFile(path.join(__dirname, '..', 'runtime', 'native_task.dart')),
   );
 
   const { generate } = require('../src/toolchain/generate');
@@ -276,11 +276,11 @@ test('the generator reads options off the annotation', { skip: !dartOnPath }, as
   await mkdir(path.join(root, 'native'), { recursive: true });
   await writeFile(
     path.join(root, 'native_task.dart'),
-    await readFile(path.join(__dirname, '..', 'template', 'native_task.dart')),
+    await readFile(path.join(__dirname, '..', 'runtime', 'native_task.dart')),
   );
   await writeFile(
     path.join(root, 'render_dart.dart'),
-    await readFile(path.join(__dirname, '..', 'template', 'render_dart.dart')),
+    await readFile(path.join(__dirname, '..', 'runtime', 'render_dart.dart')),
   );
   await writeFile(
     path.join(root, 'native', 'tools_impl.dart'),
@@ -309,7 +309,7 @@ test('package.json overrides what the annotation declared', { skip: !dartOnPath 
   const root = await scratch();
   await mkdir(path.join(root, 'native'), { recursive: true });
   for (const f of ['native_task.dart', 'render_dart.dart']) {
-    await writeFile(path.join(root, f), await readFile(path.join(__dirname, '..', 'template', f)));
+    await writeFile(path.join(root, f), await readFile(path.join(__dirname, '..', 'runtime', f)));
   }
   await writeFile(
     path.join(root, 'native', 'tools_impl.dart'),

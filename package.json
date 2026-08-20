@@ -25,7 +25,8 @@
   },
   "files": [
     "src",
-    "template",
+    "runtime",
+    "examples",
     "README.md",
     "LICENSE",
     "dart"

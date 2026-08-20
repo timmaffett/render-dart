@@ -21,6 +21,15 @@ does not know Dart is possible; this skill is the Dart path.
 
 ## Start here
 
+Prefer scaffolding from an example over writing a task body from scratch — each
+one has been run:
+
+```bash
+npx render-dart init my-app --template postgres   # or http, native, introspect
+```
+
+`references/examples.md` maps each template to the question it answers.
+
 ```bash
 npm install render-dart
 npx render-dart init my-workflow
@@ -71,6 +80,7 @@ speed. See `references/native-tasks.md`.
 
 ## Detail
 
+- `references/examples.md` — the templates, and which to reach for
 - `references/native-tasks.md` — the full native task workflow, worker mode,
   what can cross the boundary
 - `references/wasm-packages.md` — packages that ship WebAssembly

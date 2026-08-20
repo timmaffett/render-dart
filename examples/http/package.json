@@ -1,0 +1,16 @@
+{
+  "name": "render-dart-http-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Calling external APIs from a Render Workflows task written in Dart",
+  "scripts": {
+    "build": "render-dart build",
+    "start": "node index.js",
+    "dev": "render-dart dev"
+  },
+  "dependencies": {
+    "@renderinc/sdk": "^0.6.0",
+    "render-dart": "^0.6.0"
+  },
+  "engines": { "node": ">=18" }
+}

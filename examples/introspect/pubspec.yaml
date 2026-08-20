@@ -1,0 +1,23 @@
+name: render_dart_introspect_example
+description: A workflow task that inspects and orchestrates Render itself.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  # Runs under dart2js: it uses package:http, whose web implementation goes
+  # through the browser's networking rather than dart:io sockets. So these
+  # tasks need no native compilation.
+  #
+  # A git dependency while the package is unpublished; becomes a version
+  # constraint once it is on pub.dev.
+  #
+  # package:render_workflows would be the better tool for the waiting in
+  # runElsewhere, but it cannot be fetched this way yet: it depends on
+  # render_api by path, and a path dependency cannot resolve outside its own
+  # git repository. That resolves itself when render_api reaches pub.dev.
+  render_api:
+    git:
+      url: https://github.com/timmaffett/render_api_sdk.git

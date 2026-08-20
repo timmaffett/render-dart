@@ -1,0 +1,17 @@
+name: render_dart_postgres_seed
+description: Creates and fills the table the workflow tasks read.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  postgres: ^3.5.12
+  # Fetches the connection string, so nothing secret lives in a file.
+  #
+  # A git dependency while render_api is unpublished; becomes a version
+  # constraint once it is on pub.dev.
+  render_api:
+    git:
+      url: https://github.com/timmaffett/render_api_sdk.git

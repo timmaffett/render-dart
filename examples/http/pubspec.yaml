@@ -1,0 +1,13 @@
+name: render_dart_http_example
+description: Calling external APIs from a Render Workflows task.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  # Works under dart2js because its web implementation goes through the
+  # browser's networking rather than dart:io sockets. This is the reason
+  # HTTP needs no native task.
+  http: ^1.2.0

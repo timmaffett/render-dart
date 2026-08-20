@@ -17,8 +17,16 @@ src/native-worker.js  keeps native executables alive between calls
 src/cli.js            build / dev / init
 src/toolchain/        SDK fetch, dart2js, native compile, generation
 dart/generator/       reads @nativeTask with package:analyzer; own pubspec
-template/             what `init` copies, incl. the two runtime .dart files
+runtime/              render_dart.dart, native_task.dart, and the AGENTS.md
+                      that init writes into a scaffolded project
+examples/             runnable services, which are also the init templates
 ```
+
+**Examples are templates.** `init` copies `examples/<name>/`, so an example
+that does not work is a broken template. There is deliberately no separate
+`template/` directory to drift from them, and no per-example copy of the two
+bridge files — `build` writes those when missing, which is the same mechanism
+that keeps them current on upgrade.
 
 `npm test` — 53 tests, offline. Run it before claiming anything works.
 

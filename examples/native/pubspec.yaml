@@ -1,0 +1,7 @@
+name: render_dart_native_example
+description: Reaching dart:io, dart:ffi and isolates from a Render Workflows task.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.12.0

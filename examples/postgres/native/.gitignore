@@ -1,0 +1,4 @@
+# Written by `render-dart build`. These are generated from the
+# @nativeTask sources beside them and would only ever go stale in git.
+db.dart
+db.stub.dart

@@ -1,0 +1,24 @@
+{
+  "name": "render-dart-postgres-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reading and writing Render Postgres from a Dart workflow task",
+  "scripts": {
+    "build": "render-dart build",
+    "start": "node index.js",
+    "dev": "render-dart dev"
+  },
+  "dependencies": {
+    "@renderinc/sdk": "^0.6.0",
+    "render-dart": "^0.6.0"
+  },
+  "renderDart": {
+    "native": [
+      "native/db_impl.dart"
+    ],
+    "allowDartIoIn": [
+      "seed"
+    ]
+  },
+  "engines": { "node": ">=18" }
+}

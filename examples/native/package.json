@@ -1,0 +1,21 @@
+{
+  "name": "render-dart-native-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "dart:io, dart:ffi and parallel isolates from a Render Workflows task",
+  "scripts": {
+    "build": "render-dart build",
+    "start": "node index.js",
+    "dev": "render-dart dev"
+  },
+  "dependencies": {
+    "@renderinc/sdk": "^0.6.0",
+    "render-dart": "^0.6.0"
+  },
+  "renderDart": {
+    "native": [
+      "native/tools_impl.dart"
+    ]
+  },
+  "engines": { "node": ">=18" }
+}
