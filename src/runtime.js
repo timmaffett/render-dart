@@ -18,6 +18,7 @@ const { pathToFileURL } = require('node:url');
 const { task, startTaskServer } = require('@renderinc/sdk/workflows');
 const { installWebShims, ensureWasmRunGlobals } = require('./web-shims');
 const { installNodeBridge } = require('./node-bridge');
+const { installNativeWorker } = require('./native-worker');
 
 // Node lacks several APIs Dart packages assume: `self`, a `file:` scheme for
 // fetch, Dart's packages/<name>/ asset paths, and XMLHttpRequest.
@@ -26,6 +27,7 @@ installWebShims();
 // Reaching npm packages and shelling out. Dart can do neither on its own:
 // `require` is module-scoped, and dart:io's Process fails under dart2js.
 installNodeBridge();
+installNativeWorker();
 
 /**
  * Turns a project-relative path into a file: URL the patched fetch can read.

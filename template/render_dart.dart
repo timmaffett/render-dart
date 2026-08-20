@@ -18,6 +18,13 @@ external JSPromise<JSAny?> _callTask(String name, JSArray args);
 @JS('__start')
 external JSPromise<JSAny?> _start();
 
+@JS('__nativeCall')
+external JSPromise<JSArray<JSString>> _nativeCall(
+  String binary,
+  String request,
+  JSObject options,
+);
+
 @JS('__fileUri')
 external String _fileUri(String relativePath);
 
@@ -165,6 +172,8 @@ Future<Object?> callNativeTask(
   String method,
   List<Object?> args, [
   Map<String, Object?> named = const {},
+  bool worker = false,
+  int idleTimeoutMs = 30000,
 ]) async {
   final request = jsonEncode({
     'id': 1,
@@ -173,12 +182,24 @@ Future<Object?> callNativeTask(
     'named': named,
   });
 
-  final result = await runProcess(
-    'build/native/$binary',
-    stdin: '$request\n',
-  );
+  // Both paths speak the same JSONL, so the reply handling below is shared.
+  // A worker keeps the executable alive and assigns its own ids, since it can
+  // have several calls in flight; a one-shot spawn writes a line and reads the
+  // answer back.
+  final List<String> lines;
+  ProcessResult? result;
 
-  for (final line in const LineSplitter().convert(result.stdout)) {
+  if (worker) {
+    final options = JSObject()..['idleTimeoutMs'] = idleTimeoutMs.toJS;
+    final replies =
+        await _nativeCall('build/native/$binary', request, options).toDart;
+    lines = replies.toDart.map((line) => line.toDart).toList();
+  } else {
+    result = await runProcess('build/native/$binary', stdin: '$request\n');
+    lines = const LineSplitter().convert(result.stdout);
+  }
+
+  for (final line in lines) {
     if (line.trim().isEmpty) continue;
 
     final Map<String, Object?> message;
@@ -207,9 +228,11 @@ Future<Object?> callNativeTask(
     if (message.containsKey(r'$ok')) return message[r'$ok'];
   }
 
-  // No reply at all: the process died before it could answer.
+  // No reply at all: the process died before it could answer. A worker
+  // rejects on its own with the child's exit status, so this only covers the
+  // one-shot path.
   throw NativeTaskException(
-    result.exitCode == 0
+    result == null || result.exitCode == 0
         ? 'no response from build/native/$binary'
         : 'build/native/$binary exited ${result.exitCode}'
             '${result.stderr.trim().isEmpty ? '' : ': ${result.stderr.trim()}'}',

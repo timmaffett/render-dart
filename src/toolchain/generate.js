@@ -46,7 +46,14 @@ function ensureRuntimeFile(root, name, log) {
     return;
   }
   if (readFileSync(local, 'utf8') !== readFileSync(shipped, 'utf8')) {
-    log(`note: ${name} differs from the version shipped with render-dart`);
+    // Worth being loud about: the failure mode is a compile error against a
+    // signature that changed, which reads as a bug in the generated code
+    // rather than as a stale file.
+    log(
+      `note: ${name} differs from the copy shipped with this render-dart. ` +
+        `If the build fails on a signature it does not recognise, refresh it: ` +
+        `cp node_modules/render-dart/template/${name} ${name}`,
+    );
   }
 }
 
@@ -74,6 +81,8 @@ function generate({ dart, root, entry, pubCache, log }) {
       '--name', entry.name,
       '--stub', stub,
       '--main', main,
+      '--worker', String(entry.worker),
+      '--idle', String(entry.idleTimeoutMs),
     ],
     {
       cwd: GENERATOR_DIR,

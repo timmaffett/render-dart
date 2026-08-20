@@ -25,6 +25,8 @@ Future<int> main(List<String> argv) async {
   final name = args['name']!;
   final stubPath = args['stub']!;
   final mainPath = args['main']!;
+  final worker = args['worker'] == 'true';
+  final idleTimeoutMs = int.tryParse(args['idle'] ?? '') ?? 30000;
 
   final collection = AnalysisContextCollection(includedPaths: [project, entry]);
   final session = collection.contextFor(entry).currentSession;
@@ -70,7 +72,7 @@ Future<int> main(List<String> argv) async {
 
   File(stubPath)
     ..createSync(recursive: true)
-    ..writeAsStringSync(_stubs(name, fns, stubPath, project));
+    ..writeAsStringSync(_stubs(name, fns, stubPath, project, worker, idleTimeoutMs));
   File(mainPath)
     ..createSync(recursive: true)
     ..writeAsStringSync(_dispatcher(name, fns, mainPath, entry, project));
@@ -192,6 +194,8 @@ String _stubs(
   List<TopLevelFunctionElement> fns,
   String stubPath,
   String project,
+  bool worker,
+  int idleTimeoutMs,
 ) {
   final b = StringBuffer(_header(name))
     ..writeln("import '${_importPath(stubPath, '$project/render_dart.dart')}';")
@@ -212,7 +216,10 @@ String _stubs(
     b
       ..writeln('/// Runs `${fn.name}` in the `$name` native executable.')
       ..writeln('Future<${isVoid ? 'void' : _display(ret)}> $sig async {');
-    final call = "callNativeTask('$name', '${fn.name}', $args, $namedMap)";
+    // The extra positionals are only spelled out for a worker, so the common
+    // case stays readable.
+    final tail = worker ? ', true, $idleTimeoutMs' : '';
+    final call = "callNativeTask('$name', '${fn.name}', $args, $namedMap$tail)";
     if (isVoid) {
       b.writeln('  await $call;');
     } else {

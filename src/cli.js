@@ -10,7 +10,7 @@ const { version } = require('../package.json');
 const { resolveDart } = require('./toolchain/dart-sdk');
 const { compile, findDartIoImports, isFresh, pubGet } = require('./toolchain/compile');
 const { nativeEntries, buildNative } = require('./toolchain/native');
-const { generate } = require('./toolchain/generate');
+const { generate, ensureRuntimeFile } = require('./toolchain/generate');
 
 const DEFAULT_DART_VERSION = '3.13.0';
 
@@ -106,6 +106,10 @@ async function build(root, { force = false } = {}) {
     pubCache = pubGet(dart, root, log);
   }
 
+
+  // Flag a render_dart.dart left behind by an older render-dart before
+  // anything can fail against a signature it does not have.
+  ensureRuntimeFile(root, 'render_dart.dart', log);
 
   // Generation comes first: the stubs it writes are what tasks.dart imports,
   // so dart2js must not run before they exist.

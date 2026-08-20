@@ -153,3 +153,99 @@ test('the generator rejects a parameter that cannot cross JSON', { skip: !dartOn
   );
   assert.ok(!existsSync(path.join(root, 'native', 'bad.g.dart')), 'no stub on failure');
 });
+
+// ------------------------------------------------------------------ worker
+
+const { nativeCall, shutdownWorkers, workers } = require('../src/native-worker');
+
+/**
+ * A stand-in for a compiled native task: same JSONL contract, no Dart needed.
+ *
+ * `ping` counts calls so a reused process is provable, and `die` exits hard —
+ * which a caught Dart throw does not, so it covers the failure the dispatch
+ * loop cannot handle itself.
+ */
+async function fakeBinary(dir) {
+  const file = path.join(dir, 'fake-native');
+  await writeFile(
+    file,
+    `#!/usr/bin/env node
+let calls = 0;
+require('node:readline')
+  .createInterface({ input: process.stdin })
+  .on('line', (line) => {
+    const { id, method } = JSON.parse(line);
+    if (method === 'die') { process.stderr.write('fatal\\n'); process.exit(7); }
+    if (method === 'slow') { setTimeout(() => reply(id, ++calls), 40); return; }
+    reply(id, ++calls);
+  });
+function reply(id, calls) {
+  process.stdout.write(JSON.stringify({ id, $ok: { calls, pid: process.pid } }) + '\\n');
+}
+`,
+    { mode: 0o755 },
+  );
+  return file;
+}
+
+const okOf = (lines) => JSON.parse(lines[lines.length - 1]).$ok;
+const req = (method) => JSON.stringify({ id: 1, method, args: [], named: {} });
+
+test('a worker serves many calls from one process', async (t) => {
+  t.after(shutdownWorkers);
+  const bin = await fakeBinary(await scratch());
+
+  const first = okOf(await nativeCall(bin, req('ping')));
+  const second = okOf(await nativeCall(bin, req('ping')));
+
+  assert.strictEqual(first.calls, 1);
+  assert.strictEqual(second.calls, 2, 'state must survive between calls');
+  assert.strictEqual(first.pid, second.pid, 'same process');
+});
+
+test('concurrent calls are matched to their own replies by id', async (t) => {
+  t.after(shutdownWorkers);
+  const bin = await fakeBinary(await scratch());
+
+  // 'slow' answers out of step with 'ping', so a positional match would pair
+  // the wrong reply with the wrong caller.
+  const [slow, fast] = await Promise.all([
+    nativeCall(bin, req('slow')),
+    nativeCall(bin, req('ping')),
+  ]);
+
+  assert.strictEqual(okOf(fast).calls, 1, 'ping answered first');
+  assert.strictEqual(okOf(slow).calls, 2, 'slow answered second');
+});
+
+test('a dying worker rejects in-flight calls and respawns for the next', async (t) => {
+  t.after(shutdownWorkers);
+  const bin = await fakeBinary(await scratch());
+
+  const before = okOf(await nativeCall(bin, req('ping')));
+
+  await assert.rejects(nativeCall(bin, req('die')), (e) => {
+    // A hung promise would be the worst outcome; the exit status and the
+    // child's stderr both have to reach the caller.
+    assert.match(e.message, /exited with code 7/);
+    assert.match(e.message, /fatal/);
+    return true;
+  });
+
+  const after = okOf(await nativeCall(bin, req('ping')));
+  assert.strictEqual(after.calls, 1, 'a fresh process starts over');
+  assert.notStrictEqual(after.pid, before.pid, 'and it is a different process');
+});
+
+test('an idle worker is reaped, and the next call starts a new one', async (t) => {
+  t.after(shutdownWorkers);
+  const bin = await fakeBinary(await scratch());
+
+  const before = okOf(await nativeCall(bin, req('ping'), { idleTimeoutMs: 50 }));
+  await new Promise((r) => setTimeout(r, 250));
+  assert.strictEqual(workers.size, 0, 'reaped after idling');
+
+  const after = okOf(await nativeCall(bin, req('ping'), { idleTimeoutMs: 50 }));
+  assert.strictEqual(after.calls, 1);
+  assert.notStrictEqual(after.pid, before.pid);
+});
