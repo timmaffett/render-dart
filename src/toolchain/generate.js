@@ -67,9 +67,15 @@ function generate({ dart, root, entry, pubCache, log }) {
   ensureGenerator(dart, pubCache, log);
   ensureRuntimeFile(root, 'native_task.dart', log);
 
-  const stub = path.join(entry.dir, `${entry.name}.g.dart`);
   const main = path.join(root, '.dart_tool', 'render_dart', `${entry.name}.main.dart`);
   mkdirSync(path.dirname(main), { recursive: true });
+
+  // Only pass an override when package.json actually set one; otherwise the
+  // annotation decides.
+  const overrides = [];
+  if (entry.worker !== undefined) overrides.push('--worker', String(entry.worker));
+  if (entry.idleTimeoutMs !== undefined) overrides.push('--idle', String(entry.idleTimeoutMs));
+  if (entry.timeoutMs !== undefined) overrides.push('--timeout', String(entry.timeoutMs));
 
   const result = spawnSync(
     dart,
@@ -79,10 +85,10 @@ function generate({ dart, root, entry, pubCache, log }) {
       '--project', root,
       '--entry', entry.entry,
       '--name', entry.name,
-      '--stub', stub,
+      '--stub', entry.stub,
+      '--facade', entry.facade,
       '--main', main,
-      '--worker', String(entry.worker),
-      '--idle', String(entry.idleTimeoutMs),
+      ...overrides,
     ],
     {
       cwd: GENERATOR_DIR,

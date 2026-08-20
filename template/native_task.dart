@@ -30,10 +30,24 @@ import 'dart:io';
 /// anything else by name rather than letting it fail as a decode error at run
 /// time.
 class NativeTask {
-  const NativeTask();
+  const NativeTask({this.worker, this.idleTimeout, this.timeout});
+
+  /// Keep the executable alive between calls.
+  ///
+  /// Much faster in a loop — 10 ms against 132 ms over 20 calls on Render —
+  /// but the process keeps its top-level state, so call N can observe what
+  /// call N-1 left behind and a leak is never cleaned up by process exit.
+  /// Defaults to false.
+  final bool? worker;
+
+  /// How long an idle worker lingers before it is reaped. Defaults to 30 s.
+  final Duration? idleTimeout;
+
+  /// How long one call may take before it is abandoned. Unset means no limit.
+  final Duration? timeout;
 }
 
-/// The annotation itself: `@nativeTask`.
+/// The annotation itself, for the common case with no options: `@nativeTask`.
 const nativeTask = NativeTask();
 
 /// What a generated dispatcher entry looks like.

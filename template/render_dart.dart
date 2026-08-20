@@ -5,6 +5,7 @@
 /// so a project stays self-contained.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
@@ -167,6 +168,53 @@ class NativeTaskException implements Exception {
 /// One JSONL line goes in and the reply lines come back. `print()` on the
 /// native side arrives as a `\$log` line and is forwarded here, so native
 /// output still reaches the task log instead of corrupting the framing.
+/// Per-call overrides for native tasks, scoped to a block.
+///
+/// Settings normally travel with the `@NativeTask` declaration, so nothing at
+/// a call site needs to know a function is native. This is the escape hatch
+/// for the times one caller wants something different — it changes no
+/// signatures, which is what keeps the same source compiling both natively and
+/// under dart2js.
+///
+/// ```dart
+/// await NativeCall.scope(worker: false, () async => probe(30));
+/// ```
+class NativeCall {
+  const NativeCall._();
+
+  static const _key = #renderDartNativeCall;
+
+  /// Runs [body] with these settings applied to every native call inside it,
+  /// including nested ones.
+  static Future<T> scope<T>(
+    Future<T> Function() body, {
+    bool? worker,
+    Duration? idleTimeout,
+    Duration? timeout,
+  }) {
+    final outer = Zone.current[_key] as _NativeOverrides?;
+    return runZoned(
+      body,
+      zoneValues: {
+        // An inner scope refines the outer one rather than replacing it.
+        _key: _NativeOverrides(
+          worker: worker ?? outer?.worker,
+          idleTimeoutMs: idleTimeout?.inMilliseconds ?? outer?.idleTimeoutMs,
+          timeoutMs: timeout?.inMilliseconds ?? outer?.timeoutMs,
+        ),
+      },
+    );
+  }
+}
+
+class _NativeOverrides {
+  const _NativeOverrides({this.worker, this.idleTimeoutMs, this.timeoutMs});
+
+  final bool? worker;
+  final int? idleTimeoutMs;
+  final int? timeoutMs;
+}
+
 Future<Object?> callNativeTask(
   String binary,
   String method,
@@ -174,7 +222,13 @@ Future<Object?> callNativeTask(
   Map<String, Object?> named = const {},
   bool worker = false,
   int idleTimeoutMs = 30000,
+  int timeoutMs = 0,
 ]) async {
+  // A surrounding NativeCall.scope wins over what the declaration asked for.
+  final overrides = Zone.current[NativeCall._key] as _NativeOverrides?;
+  final useWorker = overrides?.worker ?? worker;
+  final idle = overrides?.idleTimeoutMs ?? idleTimeoutMs;
+  final limit = overrides?.timeoutMs ?? timeoutMs;
   final request = jsonEncode({
     'id': 1,
     'method': method,
@@ -189,13 +243,19 @@ Future<Object?> callNativeTask(
   final List<String> lines;
   ProcessResult? result;
 
-  if (worker) {
-    final options = JSObject()..['idleTimeoutMs'] = idleTimeoutMs.toJS;
+  if (useWorker) {
+    final options = JSObject()
+      ..['idleTimeoutMs'] = idle.toJS
+      ..['timeoutMs'] = limit.toJS;
     final replies =
         await _nativeCall('build/native/$binary', request, options).toDart;
     lines = replies.toDart.map((line) => line.toDart).toList();
   } else {
-    result = await runProcess('build/native/$binary', stdin: '$request\n');
+    result = await runProcess(
+      'build/native/$binary',
+      stdin: '$request\n',
+      timeout: limit > 0 ? Duration(milliseconds: limit) : null,
+    );
     lines = const LineSplitter().convert(result.stdout);
   }
 

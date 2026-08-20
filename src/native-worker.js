@@ -120,7 +120,7 @@ function armIdleTimer(worker) {
  * it parses `$log`, `$ok` and `$err` the same way whether they came from a
  * worker or a one-shot spawn.
  */
-function nativeCall(binary, requestLine, { idleTimeoutMs = 30000 } = {}) {
+function nativeCall(binary, requestLine, { idleTimeoutMs = 30000, timeoutMs = 0 } = {}) {
   const resolved = path.resolve(process.cwd(), binary);
 
   let worker = workers.get(resolved);
@@ -137,11 +137,36 @@ function nativeCall(binary, requestLine, { idleTimeoutMs = 30000 } = {}) {
   clearTimeout(worker.idleTimer);
 
   return new Promise((resolve, reject) => {
-    worker.pending.set(id, { resolve, reject, lines: [] });
+    // A worker handles requests one at a time, so a call that never returns
+    // would block every later one. The whole process goes, rather than leaving
+    // a worker wedged behind a hung handler.
+    let timer = null;
+    const settle = (fn) => (value) => {
+      if (timer) clearTimeout(timer);
+      fn(value);
+    };
+
+    worker.pending.set(id, { resolve: settle(resolve), reject: settle(reject), lines: [] });
+
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        if (!worker.pending.has(id)) return;
+        worker.pending.delete(id);
+        worker.child.kill('SIGKILL');
+        reject(new Error(
+          `native worker ${path.basename(resolved)} exceeded ${timeoutMs} ms`,
+        ));
+      }, timeoutMs);
+      timer.unref?.();
+    }
+
     worker.child.stdin.write(`${JSON.stringify(request)}\n`, (e) => {
       if (!e) return;
+      const call = worker.pending.get(id);
       worker.pending.delete(id);
-      reject(new Error(`could not write to native worker ${path.basename(resolved)}: ${e.message}`));
+      call?.reject(new Error(
+        `could not write to native worker ${path.basename(resolved)}: ${e.message}`,
+      ));
     });
   });
 }

@@ -40,15 +40,32 @@ function nativeEntries(root, declared) {
       throw new Error(`unknown native mode "${mode}" for ${spec.entry} (expected "task" or "exe")`);
     }
 
-    const worker = spec.worker ?? false;
+    // Left undefined when package.json says nothing, so the annotation on the
+    // function decides. Only an explicit value here overrides it.
+    const worker = spec.worker;
     // An "exe" owns its own main and has no dispatch loop to keep alive, so
     // there is nothing for a worker to talk to.
-    if (worker && mode !== 'task') {
+    if (worker === true && mode !== 'task') {
       throw new Error(`"worker" needs mode "task", but ${spec.entry} is mode "exe"`);
     }
 
     const entry = path.resolve(root, spec.entry);
-    const name = path.basename(spec.entry, '.dart');
+    // `native/probe_impl.dart` is the implementation; the generated facade
+    // takes the plain name, so callers write `import 'native/probe.dart'` and
+    // never see a generated filename.
+    const base = path.basename(spec.entry, '.dart');
+    const name = base.endsWith('_impl') ? base.slice(0, -'_impl'.length) : base;
+
+    const dir = path.dirname(entry);
+    const facade = path.join(dir, `${name}.dart`);
+    if (facade === entry) {
+      throw new Error(
+        `${spec.entry} would be overwritten by its own generated facade. ` +
+          `Name the implementation ${name}_impl.dart, so the facade can take ` +
+          `${name}.dart and callers import the plain name.`,
+      );
+    }
+
     if (seen.has(name)) {
       throw new Error(
         `two native entries are both named "${name}" (${seen.get(name)} and ${spec.entry}); ` +
@@ -61,10 +78,13 @@ function nativeEntries(root, declared) {
       name,
       entry,
       rel: spec.entry,
-      dir: path.dirname(entry),
+      dir,
+      facade,
+      stub: path.join(dir, `${name}.stub.dart`),
       mode,
       worker,
-      idleTimeoutMs: spec.idleTimeoutMs ?? 30000,
+      idleTimeoutMs: spec.idleTimeoutMs,
+      timeoutMs: spec.timeoutMs,
       out: path.join(root, OUT_DIR, name),
     };
   });
@@ -160,4 +180,38 @@ async function buildNative({ dart, root, entries, pubCache, log }) {
   }
 }
 
-module.exports = { nativeEntries, buildNative, fingerprint, dartFilesUnder, CACHE_DIR, OUT_DIR };
+/**
+ * Writes a .gitignore listing what the build generated in each native dir.
+ *
+ * The facade takes a natural name like `probe.dart`, so without this it reads
+ * as hand-written source. Having the build maintain the list keeps it right as
+ * entries are added or renamed.
+ */
+function writeGeneratedIgnores(root, entries) {
+  const byDir = new Map();
+  for (const entry of entries) {
+    if (entry.mode !== 'task') continue;
+    const names = byDir.get(entry.dir) ?? [];
+    names.push(path.basename(entry.facade), path.basename(entry.stub));
+    byDir.set(entry.dir, names);
+  }
+
+  for (const [dir, names] of byDir) {
+    writeFileSync(
+      path.join(dir, '.gitignore'),
+      '# Written by `render-dart build`. These are generated from the\n' +
+        '# @nativeTask sources beside them and would only ever go stale in git.\n' +
+        `${names.sort().join('\n')}\n`,
+    );
+  }
+}
+
+module.exports = {
+  nativeEntries,
+  buildNative,
+  fingerprint,
+  dartFilesUnder,
+  writeGeneratedIgnores,
+  CACHE_DIR,
+  OUT_DIR,
+};

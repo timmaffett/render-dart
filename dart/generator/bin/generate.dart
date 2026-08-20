@@ -25,8 +25,13 @@ Future<int> main(List<String> argv) async {
   final name = args['name']!;
   final stubPath = args['stub']!;
   final mainPath = args['main']!;
-  final worker = args['worker'] == 'true';
-  final idleTimeoutMs = int.tryParse(args['idle'] ?? '') ?? 30000;
+  final facadePath = args['facade']!;
+  // package.json overrides the annotation; absent means "annotation decides".
+  final override = _Options(
+    worker: args['worker'] == null ? null : args['worker'] == 'true',
+    idleTimeoutMs: int.tryParse(args['idle'] ?? ''),
+    timeoutMs: int.tryParse(args['timeout'] ?? ''),
+  );
 
   final collection = AnalysisContextCollection(includedPaths: [project, entry]);
   final session = collection.contextFor(entry).currentSession;
@@ -72,7 +77,10 @@ Future<int> main(List<String> argv) async {
 
   File(stubPath)
     ..createSync(recursive: true)
-    ..writeAsStringSync(_stubs(name, fns, stubPath, project, worker, idleTimeoutMs));
+    ..writeAsStringSync(_stubs(name, fns, stubPath, project, override));
+  File(facadePath)
+    ..createSync(recursive: true)
+    ..writeAsStringSync(_facade(name, stubPath, facadePath, entry));
   File(mainPath)
     ..createSync(recursive: true)
     ..writeAsStringSync(_dispatcher(name, fns, mainPath, entry, project));
@@ -85,6 +93,58 @@ Future<int> main(List<String> argv) async {
 }
 
 // ---------------------------------------------------------------- annotations
+
+/// Effective settings for one native task.
+class _Options {
+  const _Options({this.worker, this.idleTimeoutMs, this.timeoutMs});
+
+  final bool? worker;
+  final int? idleTimeoutMs;
+  final int? timeoutMs;
+
+  /// [other] wins where it has an opinion. Used for package.json over the
+  /// annotation, so a deployment can change behaviour without editing code.
+  _Options overriddenBy(_Options other) => _Options(
+        worker: other.worker ?? worker,
+        idleTimeoutMs: other.idleTimeoutMs ?? idleTimeoutMs,
+        timeoutMs: other.timeoutMs ?? timeoutMs,
+      );
+}
+
+/// Reads `@NativeTask(...)` arguments off the function.
+_Options _optionsOf(TopLevelFunctionElement fn) {
+  for (final a in fn.metadata.annotations) {
+    final value = a.computeConstantValue();
+    if (value?.type?.element?.name != 'NativeTask') continue;
+
+    // A const Duration exposes its microseconds as a field on the constant.
+    // Current SDKs name it `inMicroseconds`; older ones used the private
+    // `_duration`, so both are tried rather than silently reading null and
+    // falling back to a default the author did not ask for.
+    int? ms(String field) {
+      final duration = value!.getField(field);
+      if (duration == null || duration.isNull) return null;
+
+      final micros = duration.getField('inMicroseconds')?.toIntValue() ??
+          duration.getField('_duration')?.toIntValue();
+      if (micros == null) {
+        stderr.writeln(
+          'warning: could not read $field from @NativeTask on ${fn.name}; '
+          'using the default instead',
+        );
+        return null;
+      }
+      return micros ~/ 1000;
+    }
+
+    return _Options(
+      worker: value!.getField('worker')?.toBoolValue(),
+      idleTimeoutMs: ms('idleTimeout'),
+      timeoutMs: ms('timeout'),
+    );
+  }
+  return const _Options();
+}
 
 bool _isNativeTask(TopLevelFunctionElement fn) {
   for (final a in fn.metadata.annotations) {
@@ -194,8 +254,7 @@ String _stubs(
   List<TopLevelFunctionElement> fns,
   String stubPath,
   String project,
-  bool worker,
-  int idleTimeoutMs,
+  _Options override,
 ) {
   final b = StringBuffer(_header(name))
     ..writeln("import '${_importPath(stubPath, '$project/render_dart.dart')}';")
@@ -216,9 +275,12 @@ String _stubs(
     b
       ..writeln('/// Runs `${fn.name}` in the `$name` native executable.')
       ..writeln('Future<${isVoid ? 'void' : _display(ret)}> $sig async {');
-    // The extra positionals are only spelled out for a worker, so the common
-    // case stays readable.
-    final tail = worker ? ', true, $idleTimeoutMs' : '';
+    // Settings ride with the declaration, so nothing at the call site has to
+    // know this is native.
+    final o = _optionsOf(fn).overriddenBy(override);
+    final tail = (o.worker ?? false)
+        ? ', true, ${o.idleTimeoutMs ?? 30000}, ${o.timeoutMs ?? 0}'
+        : (o.timeoutMs != null ? ', false, 30000, ${o.timeoutMs}' : '');
     final call = "callNativeTask('$name', '${fn.name}', $args, $namedMap$tail)";
     if (isVoid) {
       b.writeln('  await $call;');
@@ -258,6 +320,27 @@ String _stubSignature(TopLevelFunctionElement fn) {
   ];
   return '${fn.name}(${parts.join(', ')})';
 }
+
+/// The file callers import.
+///
+/// A conditional export, so the same import resolves to the real
+/// implementation when compiled AOT and to the process-spawning stub under
+/// dart2js. That is what lets task code call a native task by its plain name
+/// with no knowledge that it is native — and lets native code calling a
+/// sibling native function skip the process hop entirely.
+String _facade(String name, String stubPath, String facadePath, String entry) => '''
+${_header(name)}// Callers import this file, not the implementation beside it.
+//
+// Under dart2js `dart.library.io` is false, so this resolves to the stub that
+// spawns the executable. Compiled AOT it resolves to the implementation and the
+// call is direct.
+//
+// Always `await` a native task: the stub returns a Future where the
+// implementation may return a plain value, so awaiting is what makes one piece
+// of code compile against both.
+export '${_importPath(facadePath, stubPath)}'
+    if (dart.library.io) '${_importPath(facadePath, entry)}';
+''';
 
 String _dispatcher(
   String name,
@@ -317,7 +400,7 @@ Map<String, String> _parseArgs(List<String> argv) {
   for (var i = 0; i < argv.length; i++) {
     if (argv[i].startsWith('--')) out[argv[i].substring(2)] = argv[++i];
   }
-  for (final k in ['project', 'entry', 'name', 'stub', 'main']) {
+  for (final k in ['project', 'entry', 'name', 'stub', 'main', 'facade']) {
     if (!out.containsKey(k)) {
       stderr.writeln('generate.dart: missing --$k');
       exit(2);

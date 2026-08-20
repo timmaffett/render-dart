@@ -9,7 +9,7 @@ const path = require('node:path');
 const { version } = require('../package.json');
 const { resolveDart } = require('./toolchain/dart-sdk');
 const { compile, findDartIoImports, isFresh, pubGet } = require('./toolchain/compile');
-const { nativeEntries, buildNative } = require('./toolchain/native');
+const { nativeEntries, buildNative, writeGeneratedIgnores } = require('./toolchain/native');
 const { generate, ensureRuntimeFile } = require('./toolchain/generate');
 
 const DEFAULT_DART_VERSION = '3.13.0';
@@ -120,6 +120,7 @@ async function build(root, { force = false } = {}) {
           entry.main = generate({ dart, root, entry, pubCache, log });
         }
       }
+      writeGeneratedIgnores(root, native);
       await buildNative({ dart, root, entries: native, pubCache, log });
     } catch (e) {
       fail(e.message);
