@@ -507,6 +507,23 @@ Use *Clear build cache & deploy* in the Dashboard to force a clean fetch.
     template/             What `init` copies, including the two runtime files
                           (render_dart.dart, native_task.dart)
 
+## Using this with a coding agent
+
+The repository carries a Claude skill at `.claude/skills/render-dart/`, covering
+task authoring, native tasks, wasm-backed packages and troubleshooting. It is
+not in the npm tarball — skills are not loaded from `node_modules` — so copy it
+if you want it:
+
+```bash
+git clone https://github.com/timmaffett/render-dart
+cp -r render-dart/.claude/skills/render-dart ~/.claude/skills/
+```
+
+It complements Render's own `render-workflows` skill, which covers Python and
+TypeScript and does not know Dart is an option.
+
+`AGENTS.md` in the repository root is guidance for working *on* this package.
+
 ## Licence
 
 MIT
