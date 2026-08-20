@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1
+
+- Fixes a dead link on the package page. The Postgres example pointed at
+  `github.com/timmaffett/render_dart_workflow_test`, which is private and not
+  where that example lives; it is `examples/postgres` in this repo, and also
+  what `init --template postgres` scaffolds.
+- Documents `--template` in the Commands table, and `allowDartIoIn` in the
+  configuration section — both shipped in 0.7.0 without being written down.
+- The Layout section described `template/`, which 0.7.0 removed. It now lists
+  `examples/` and `runtime/`.
+
 ## 0.7.0
 
 **Examples are the templates.** `examples/` holds five complete, runnable

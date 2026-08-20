@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@renderinc/sdk": "^0.6.0",
-    "render-dart": "^0.7.0"
+    "render-dart": "^0.7.1"
   },
   "engines": {
     "node": ">=18"
