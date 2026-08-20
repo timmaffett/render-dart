@@ -17,11 +17,29 @@ service these packages work with — not to suggest any endorsement.</sub>
 Write [Render Workflows](https://render.com/docs/workflows) tasks in **Dart**,
 on [Render](https://render.com).
 
-Render has no Dart runtime — its workflow runtimes are Node, Python, Go, Ruby
-and Elixir. Rather than reach for Docker (which loses API provisioning and
-local development), `render-dart` compiles your Dart to JavaScript and
-registers it through Render's own `@renderinc/sdk`. Render sees an ordinary
-Node workflow; you get real static analysis.
+[Render Workflows](https://render.com/docs/workflows) is in public beta and has
+no built-in way to use Dart: tasks are defined with Render's own SDK, which is
+available for **TypeScript and Python** only. Their docs say SDKs for more
+languages are planned.
+
+The gap is the SDK rather than the runtime — a workflow service can run on
+`node`, `python`, `go`, `ruby` or `elixir`, but without an SDK for your
+language there is nothing to register tasks with.
+
+`render-dart` closes it from the other side, without reaching for Docker (which
+would cost API provisioning and local development). It compiles Dart **two
+ways**:
+
+- **Task bodies to JavaScript**, with `dart compile js`, registered through
+  Render's `@renderinc/sdk`. Render sees an ordinary Node workflow.
+- **Anything needing the real platform to a native executable**, with
+  `dart compile exe`. The JavaScript side becomes a generated shim that calls
+  it, so the task code still reads as a plain Dart call. That is what reaches
+  `dart:io`, `dart:ffi`, isolates, and packages like `postgres` that have no
+  web build at all.
+
+Both are compiled during the deploy, on Render's own hardware — nothing binary
+is committed. You get real static analysis over the whole thing.
 
 ## Quick start
 
