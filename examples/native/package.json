@@ -10,12 +10,14 @@
   },
   "dependencies": {
     "@renderinc/sdk": "^0.6.0",
-    "render-dart": "^0.6.0"
+    "render-dart": "^0.7.0"
   },
   "renderDart": {
     "native": [
       "native/tools_impl.dart"
     ]
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  }
 }

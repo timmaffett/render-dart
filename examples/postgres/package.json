@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@renderinc/sdk": "^0.6.0",
-    "render-dart": "^0.6.0"
+    "render-dart": "^0.7.0"
   },
   "renderDart": {
     "native": [
@@ -20,5 +20,7 @@
       "seed"
     ]
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  }
 }
