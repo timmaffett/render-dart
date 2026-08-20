@@ -263,12 +263,28 @@ V8 matches Dart AOT on pure integer work, and beats it at small n. If your task
 is arithmetic, dart2js is already fine.
 
 The speed win that *is* real is **parallelism**, because dart2js inherits
-JavaScript's single thread. Eight jobs of fib(32) on Render: **181 ms
-sequential against 81 ms across isolates.**
+JavaScript's single thread. The same batch of fib(32), run sequentially in
+JavaScript and across isolates natively:
 
-Size that carefully. `Platform.numberOfProcessors` reports 32 on a Render
-instance, but the same test at 32 jobs returns only 1.3x against 2.2x at 8 —
-the container's CPU share is the ceiling, not the host's core count.
+| jobs | dart2js seq | native parallel | speedup |
+| ---: | ---: | ---: | ---: |
+| 2 | 46 ms | 31 ms | 1.5x |
+| 4 | 88 ms | 48 ms | 1.8x |
+| 8 | 177 ms | 84 ms | 2.1x |
+| 16 | 367 ms | 219 ms | 1.7x |
+| 32 | 706 ms | 533 ms | 1.3x |
+
+**Treat that as anecdote.** It is one workload on one Render instance, on the
+default `starter` task plan in a free workspace — the smallest there is. A
+different plan, or different work, would produce a different curve.
+
+What it does illustrate is a shape worth expecting: the benefit is real, it
+does not grow indefinitely, and past some point more isolates cost more than
+they return. The dart2js column stays flat at ~22 ms per job throughout, which
+is the control confirming the native side's rise is not noise.
+
+`Platform.numberOfProcessors` reported 32 the whole time, which was not a
+useful guide to any of this. Measure the workload on the plan it will run on.
 
 ## Native tasks
 
