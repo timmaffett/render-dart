@@ -5,6 +5,7 @@
 /// so a project stays self-contained.
 library;
 
+import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
@@ -124,6 +125,96 @@ Future<ProcessResult> runProcess(
     signal: raw['signal'].isUndefinedOrNull
         ? null
         : (raw['signal']! as JSString).toDart,
+  );
+}
+
+/// Thrown when a native task reports a failure.
+///
+/// Carries the message and stack trace from the native side rather than the
+/// spawn's exit code, so a `throw` inside AOT-compiled Dart reads the same way
+/// it would if the call had been local.
+class NativeTaskException implements Exception {
+  NativeTaskException(this.message, {this.nativeStackTrace, this.binary, this.method});
+
+  final String message;
+  final String? nativeStackTrace;
+  final String? binary;
+  final String? method;
+
+  @override
+  String toString() {
+    final where = binary == null ? '' : ' in $binary/$method';
+    return 'NativeTaskException$where: $message'
+        '${nativeStackTrace == null ? '' : '\n$nativeStackTrace'}';
+  }
+}
+
+/// Calls a `@nativeTask` function in an AOT-compiled executable.
+///
+/// Generated stubs call this; you rarely call it directly. The executable is
+/// produced by `render-dart build` from the file declared in
+/// `renderDart.native`, and lives at `build/native/<binary>` relative to the
+/// project root — which is the working directory both on Render and under
+/// `render workflows dev`.
+///
+/// One JSONL line goes in and the reply lines come back. `print()` on the
+/// native side arrives as a `\$log` line and is forwarded here, so native
+/// output still reaches the task log instead of corrupting the framing.
+Future<Object?> callNativeTask(
+  String binary,
+  String method,
+  List<Object?> args, [
+  Map<String, Object?> named = const {},
+]) async {
+  final request = jsonEncode({
+    'id': 1,
+    'method': method,
+    'args': args,
+    'named': named,
+  });
+
+  final result = await runProcess(
+    'build/native/$binary',
+    stdin: '$request\n',
+  );
+
+  for (final line in const LineSplitter().convert(result.stdout)) {
+    if (line.trim().isEmpty) continue;
+
+    final Map<String, Object?> message;
+    try {
+      message = (jsonDecode(line) as Map).cast<String, Object?>();
+    } catch (_) {
+      // Anything that is not JSON came from the program writing to stdout
+      // directly, which the generated wrapper avoids. Surface it rather than
+      // failing on a parse error nobody can act on.
+      print('[native $binary] $line');
+      continue;
+    }
+
+    if (message.containsKey(r'$log')) {
+      print('[native $binary] ${message[r'$log']}');
+      continue;
+    }
+    if (message.containsKey(r'$err')) {
+      throw NativeTaskException(
+        message[r'$err'] as String,
+        nativeStackTrace: message[r'$stack'] as String?,
+        binary: binary,
+        method: method,
+      );
+    }
+    if (message.containsKey(r'$ok')) return message[r'$ok'];
+  }
+
+  // No reply at all: the process died before it could answer.
+  throw NativeTaskException(
+    result.exitCode == 0
+        ? 'no response from build/native/$binary'
+        : 'build/native/$binary exited ${result.exitCode}'
+            '${result.stderr.trim().isEmpty ? '' : ': ${result.stderr.trim()}'}',
+    binary: binary,
+    method: method,
   );
 }
 

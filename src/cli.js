@@ -9,6 +9,8 @@ const path = require('node:path');
 const { version } = require('../package.json');
 const { resolveDart } = require('./toolchain/dart-sdk');
 const { compile, findDartIoImports, isFresh, pubGet } = require('./toolchain/compile');
+const { nativeEntries, buildNative } = require('./toolchain/native');
+const { generate } = require('./toolchain/generate');
 
 const DEFAULT_DART_VERSION = '3.13.0';
 
@@ -34,6 +36,7 @@ async function config(root) {
     optimize: c.optimize ?? 'O2',
     sourceMaps: c.sourceMaps ?? false,
     allowDartIo: c.allowDartIo ?? false,
+    native: c.native ?? [],
   };
 }
 
@@ -47,13 +50,34 @@ async function build(root, { force = false } = {}) {
     );
   }
 
-  if (!force && (await isFresh(root, c.out))) {
+  let native;
+  try {
+    native = nativeEntries(root, c.native);
+  } catch (e) {
+    fail(e.message);
+  }
+  for (const entry of native) {
+    if (!existsSync(entry.entry)) {
+      fail(`renderDart.native lists ${entry.rel}, which does not exist.`);
+    }
+  }
+
+  // Native entries have their own content-hash cache, so the mtime check only
+  // decides whether dart2js needs to run again.
+  const jsFresh = !force && (await isFresh(root, c.out));
+  if (native.length === 0 && jsFresh) {
     log('output is up to date, skipping compile');
     return c.out;
   }
 
   if (!c.allowDartIo) {
-    const io = await findDartIoImports(root);
+    // Declared native sources are compiled AOT, where dart:io works — as is
+    // native_task.dart, which is our own runtime for that side and is never
+    // reachable from the dart2js entrypoint.
+    const io = await findDartIoImports(root, [
+      ...native.map((n) => n.dir),
+      path.join(root, 'native_task.dart'),
+    ]);
     if (io.length > 0) {
       const where = io.map((h) => `  ${h.file}:${h.line}`).join('\n');
       fail(
@@ -82,6 +106,26 @@ async function build(root, { force = false } = {}) {
     pubCache = pubGet(dart, root, log);
   }
 
+
+  // Generation comes first: the stubs it writes are what tasks.dart imports,
+  // so dart2js must not run before they exist.
+  if (native.length > 0) {
+    try {
+      for (const entry of native) {
+        if (entry.mode === 'task') {
+          entry.main = generate({ dart, root, entry, pubCache, log });
+        }
+      }
+      await buildNative({ dart, root, entries: native, pubCache, log });
+    } catch (e) {
+      fail(e.message);
+    }
+  }
+
+  if (jsFresh) {
+    log('JavaScript output is up to date, skipping compile');
+    return c.out;
+  }
 
   await compile({
     dart,

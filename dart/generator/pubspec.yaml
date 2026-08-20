@@ -1,0 +1,9 @@
+name: render_dart_generator
+description: Generates native-task dispatchers and typed stubs for render-dart.
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  analyzer: any

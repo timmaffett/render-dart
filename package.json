@@ -27,7 +27,8 @@
     "src",
     "template",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "dart"
   ],
   "scripts": {
     "test": "node --test \"test/**/*.test.js\""

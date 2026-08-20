@@ -111,8 +111,13 @@ async function compile({ dart, root, entry, out, optimize = 'O2', sourceMaps = f
  * Conditional imports (`if (dart.library.io)`) are legitimate and skipped.
  * Only the project's own files are scanned, never pub dependencies.
  */
-async function findDartIoImports(root) {
+async function findDartIoImports(root, exemptDirs = []) {
   const hits = [];
+  // Declared native sources are compiled AOT, where dart:io is the whole
+  // point. Their directories are exempt; everything else stays strict.
+  const exempt = exemptDirs.map((d) => path.resolve(d));
+  const isExempt = (full) =>
+    exempt.some((d) => full === d || full.startsWith(d + path.sep));
 
   async function walk(dir) {
     let entries;
@@ -125,8 +130,10 @@ async function findDartIoImports(root) {
       if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
+        if (isExempt(full)) continue;
         await walk(full);
       } else if (entry.name.endsWith('.dart')) {
+        if (isExempt(full)) continue;
         const source = await readFile(full, 'utf8');
         source.split('\n').forEach((line, i) => {
           const trimmed = line.trim();
