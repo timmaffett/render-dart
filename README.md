@@ -41,6 +41,20 @@ ways**:
 Both are compiled during the deploy, on Render's own hardware — nothing binary
 is committed. You get real static analysis over the whole thing.
 
+## The Dart side of Render
+
+This package covers **writing** tasks. Two companion Dart packages cover the
+rest, and neither is required to use this one:
+
+| | |
+| --- | --- |
+| `render-dart` (this) | **Writing** tasks in Dart |
+| [`render_workflows`](https://pub.dev/packages/render_workflows) | **Running** them — start, watch, cancel, fan out |
+| [`render_api`](https://pub.dev/packages/render_api) | **Managing** the services — create, deploy, inspect |
+
+So a Flutter app can trigger a task with `render_workflows` that a Dart
+workflow, built here, then executes.
+
 ## Quick start
 
 ```bash
