@@ -6,6 +6,7 @@ const { cp, mkdir, readFile, rename, writeFile } = require('node:fs/promises');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
 
+const { version } = require('../package.json');
 const { resolveDart } = require('./toolchain/dart-sdk');
 const { compile, findDartIoImports, isFresh, pubGet } = require('./toolchain/compile');
 
@@ -132,10 +133,17 @@ async function init(root, args) {
   const shipped = path.join(target, 'gitignore');
   if (existsSync(shipped)) await rename(shipped, path.join(target, '.gitignore'));
 
-  // Name the project after its directory.
+  // Name the project after its directory, and pin render-dart to whatever
+  // version is doing the scaffolding.
+  //
+  // The template used to carry a hardcoded range, which silently went stale:
+  // `^0.1.0` means `<0.2.0` for a 0.x package, so every project scaffolded
+  // after 0.2.0 quietly installed 0.1.1 and missed everything since. Deriving
+  // it here means it cannot drift again.
   const pkgPath = path.join(target, 'package.json');
   const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
   pkg.name = path.basename(target);
+  pkg.dependencies['render-dart'] = `^${version}`;
   await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
   log(`created ${path.relative(root, target) || target}`);
