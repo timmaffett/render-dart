@@ -81,9 +81,22 @@ Configure through `renderDart` in `package.json`:
     "dartVersion": "3.13.0",
     "optimize": "O2",
     "sourceMaps": false,
-    "allowDartIo": false
+    "allowDartIo": false,
+    "native": []
   }
 }
+```
+
+`native` lists Dart files to compile to native executables — see
+[Native tasks](#native-tasks). Each entry is a path, or an object that can
+override what the source declared:
+
+```json
+"native": [
+  "native/tools_impl.dart",
+  { "entry": "native/raw_impl.dart", "mode": "exe" },
+  { "entry": "native/hot_impl.dart", "worker": false }
+]
 ```
 
 ## Using pub.dev packages
@@ -188,8 +201,8 @@ Dart cannot call `require` itself — in CommonJS it is module-scoped, and
 hoists it. Resolution is rooted at your project directory, so
 `requireModule('lodash')` means whatever *your* package.json depends on.
 
-**Shelling out**, to a CLI tool or to a natively compiled Dart binary shipped
-alongside the workflow:
+**Shelling out** to a CLI tool. (For calling *Dart* compiled natively, use
+[native tasks](#native-tasks) rather than driving a process by hand.)
 
 ```dart
 final result = await runProcess('git', args: ['rev-parse', 'HEAD']);
@@ -201,6 +214,132 @@ if (result.ok) print(result.stdout.trim());
 exit code is a result, and the caller usually wants `stderr` with it. It throws
 only when the process could not be started, or when `timeout` elapses (SIGKILL,
 since a task run is already bounded by Render's own timeout).
+
+## Native tasks
+
+dart2js cannot give you `dart:io`, `dart:ffi` or real isolates. Native tasks
+do: write the function once, compile it AOT, and call it from task code as if
+it were local.
+
+Write the implementation in `<name>_impl.dart`:
+
+```dart
+// native/tools_impl.dart
+import 'dart:io';
+
+import '../native_task.dart';
+
+@nativeTask
+Map<String, Object?> inspect(String path) => {
+      'bytes': File(path).lengthSync(),
+      'lines': File(path).readAsLinesSync().length,
+    };
+```
+
+Declare it, and call it by its plain name:
+
+```json
+"renderDart": { "native": ["native/tools_impl.dart"] }
+```
+
+```dart
+// tasks.dart — nothing here says "native"
+import 'native/tools.dart';
+
+task('inspect', (args) async => await inspect(args[0]! as String));
+```
+
+`render-dart build` generates `native/tools.dart` as a conditional export:
+
+```dart
+export 'tools.stub.dart' if (dart.library.io) 'tools_impl.dart';
+```
+
+so the **same source** compiles to a process call under dart2js and a direct
+call natively. That also means native code can be unit-tested on the Dart VM,
+and a native function calling a sibling skips the process hop entirely.
+
+Always `await` a native task — the stub returns a `Future` where the
+implementation may return a plain value, and awaiting is what makes one piece of
+code valid on both sides.
+
+### What can cross
+
+Parameters and return values are JSON, so: `bool`, `int`, `double`, `num`,
+`String`, `List<T>`, `Map<String, T>`, `Object?`, `dynamic`, and `Future<T>` of
+those, nullable included. Required, optional and named parameters all work,
+with their defaults.
+
+Anything else — a custom class, `Uint8List`, `Set`, a record — is **rejected at
+build time**, naming the parameter, rather than failing as a decode error on a
+live run.
+
+### Options ride with the declaration
+
+So a call site never has to know, and never has to be updated when you change
+your mind:
+
+```dart
+@NativeTask(worker: true, idleTimeout: Duration(seconds: 30))
+Future<int> hot(int a) async => a;
+```
+
+| | |
+| --- | --- |
+| `worker` | Keep the executable alive between calls. Default `false` |
+| `idleTimeout` | How long an idle worker lingers. Default 30 s |
+| `timeout` | How long one call may take. Default none |
+
+`renderDart.native` can override any of them per entry, so a deployment can
+change behaviour without editing code. To vary them for one caller — without
+changing any signature, which is what keeps the one-source property:
+
+```dart
+await NativeCall.scope(worker: false, () async => hot(1));
+```
+
+### Worker mode
+
+Measured on Render, 20 calls:
+
+| | processes | time |
+| --- | --- | --- |
+| spawn per call | 20 | 112 ms |
+| worker | 1 | **9 ms** |
+
+It is opt-in because a worker keeps top-level state between calls. That is what
+makes it fast, and it also means a leak accumulates instead of being cleaned up
+by process exit, and one call can observe what the last one left behind. A call
+that throws does *not* kill the worker; a process that dies rejects everything
+in flight with its exit code and stderr, then respawns on the next call.
+
+### The wire, and errors
+
+One JSON object per line (JSONL) over stdin/stdout. `print()` on the native side
+arrives as a `$log` line and is forwarded to the task log — on stdout it would
+corrupt the framing, so it is rerouted rather than left to break things. A
+native `throw` arrives as a `NativeTaskException` carrying the real message and
+the native stack trace.
+
+### `mode: "exe"`
+
+For a program that owns its own `main()` and wants no wrapper. It is compiled
+to `build/native/<name>` and left alone; call it with `runProcess`.
+
+### Building
+
+The vendored SDK carries `gen_snapshot`, so this needs nothing extra — and
+**nothing is cross-compiled and no binary is committed**. Render's build host is
+already `linux/x64`, so the executable is produced from the source in the commit
+that deploys it.
+
+Generated files (`tools.dart`, `tools.stub.dart`) are listed in a
+`native/.gitignore` the build maintains, because the facade takes a plain name
+and would otherwise read as hand-written source.
+
+Native sources need `dart:io`, so declared native directories — and
+`native_task.dart` — are exempt from the `dart:io` guard. Everything else stays
+strict.
 
 ## Two things this package exists to get right
 
@@ -227,6 +366,12 @@ not arbitrary top-level directories — measured, with the SDK elsewhere it was
 re-downloaded on every deploy, 33s of a 52s build. Cached, the build step is
 about a second.
 
+Native executables are cached the same way, in `node_modules/.native-cache`,
+keyed on the **content** of their sources rather than mtime — every deploy is a
+fresh git checkout that restamps mtimes, so an mtime-keyed cache could never
+hit. A deploy that changes only `tasks.dart` reuses the executable instead of
+paying for another AOT compile.
+
 Use *Clear build cache & deploy* in the Dashboard to force a clean fetch.
 
 ## Layout
@@ -235,10 +380,15 @@ Use *Clear build cache & deploy* in the Dashboard to force a clean fetch.
     src/web-shims.js      Browser-shaped APIs Node lacks: self, file: fetch,
                           Dart package assets, XMLHttpRequest
     src/node-bridge.js    Node access Dart lacks: require, subprocesses
+    src/native-worker.js  Keeping native executables alive between calls
     src/cli.js            build / dev / init
     src/toolchain/        SDK resolution and compilation, free of Render
                           specifics so it can be extracted later
-    template/             What `init` copies
+    dart/generator/       Reads @nativeTask with package:analyzer and writes
+                          the dispatcher, stubs and facade. Its own pubspec,
+                          so your project never depends on the analyzer
+    template/             What `init` copies, including the two runtime files
+                          (render_dart.dart, native_task.dart)
 
 ## Licence
 
