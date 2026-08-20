@@ -149,7 +149,15 @@ SDK when none is present.
 | --- | --- |
 | `render-dart build` | Compile `tasks.dart` to `build/tasks.js`, skipping if fresh |
 | `render-dart dev` | Build, then start Render's local task server |
-| `render-dart init [dir]` | Scaffold a new project |
+| `render-dart init [dir] [--template <name>]` | Scaffold a new project from an [example](#examples-which-are-also-templates) |
+
+`--template` takes any directory name under
+[`examples/`](examples) — `default` (the default), `http`, `native`,
+`postgres` or `introspect`. An unknown name fails listing the real ones.
+
+A scaffold also gets an `AGENTS.md`, and a `CLAUDE.md` pointing at it, so a
+coding agent working in that project has the guidance it would otherwise never
+see — see [Coding agents](#coding-agents).
 
 Configure through `renderDart` in `package.json`:
 
@@ -162,6 +170,7 @@ Configure through `renderDart` in `package.json`:
     "optimize": "O2",
     "sourceMaps": false,
     "allowDartIo": false,
+    "allowDartIoIn": [],
     "native": []
   }
 }
@@ -178,6 +187,11 @@ override what the source declared:
   { "entry": "native/hot_impl.dart", "worker": false }
 ]
 ```
+
+`allowDartIoIn` exempts named directories from the `dart:io` guard — for a
+local tool sitting beside the workflow rather than running on it, like the
+seeder in the `postgres` example. Narrower than `allowDartIo: true`, which
+switches the check off for task code too.
 
 ## Using pub.dev packages
 
@@ -584,8 +598,12 @@ Use *Clear build cache & deploy* in the Dashboard to force a clean fetch.
     dart/generator/       Reads @nativeTask with package:analyzer and writes
                           the dispatcher, stubs and facade. Its own pubspec,
                           so your project never depends on the analyzer
-    template/             What `init` copies, including the two runtime files
-                          (render_dart.dart, native_task.dart)
+    examples/             Five runnable services, which are also the `init`
+                          templates — so a template cannot drift from a
+                          working example
+    runtime/              Copied into a scaffold: the two Dart bridge files
+                          (render_dart.dart, native_task.dart) and the
+                          AGENTS.md that lands in your project
 
 ## Licence
 
