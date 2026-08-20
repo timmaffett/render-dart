@@ -529,8 +529,8 @@ Two things this example ran into, both worth knowing before you hit them:
 
 A full version, with a local seeding program that creates the table over the
 *external* connection string while the tasks read it over the *internal* one,
-is in
-[`render_postgres_example`](https://github.com/timmaffett/render_dart_workflow_test).
+is in [`examples/postgres`](examples/postgres) — which is also what
+`init --template postgres` scaffolds.
 
 ### `mode: "exe"`
 
