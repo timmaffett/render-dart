@@ -1,7 +1,12 @@
 # render-dart
 
-> **Unofficial.** An independent project, not affiliated with, endorsed by, or
-> supported by [Render](https://render.com).
+> ## ⚠️ UNOFFICIAL
+>
+> An independent, community-built project. **Not affiliated with, endorsed by,
+> or supported by [Render](https://render.com).**
+>
+> Render's own SDKs and documentation are at
+> [render.com/docs](https://render.com/docs).
 
 Write [Render Workflows](https://render.com/docs/workflows) tasks in **Dart**,
 on [Render](https://render.com).

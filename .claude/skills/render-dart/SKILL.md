@@ -1,6 +1,6 @@
 ---
 name: render-dart
-description: Writes, builds and deploys Render Workflows tasks in Dart using the render-dart npm package. Covers scaffolding a project, writing task bodies, calling natively compiled Dart for dart:io/dart:ffi/isolates, using pub.dev packages that ship WebAssembly, local development, and deployment. Use when a user wants to run Dart on Render Workflows, add or change Dart tasks, reach a database or the filesystem from a task, or deploy a Dart workflow service.
+description: Writes, builds and deploys Render Workflows tasks in Dart using render-dart, an unofficial community package not affiliated with Render. Covers scaffolding a project, writing task bodies, calling natively compiled Dart for dart:io/dart:ffi/isolates, using pub.dev packages that ship WebAssembly, local development, and deployment. Use when a user wants to run Dart on Render Workflows, add or change Dart tasks, reach a database or the filesystem from a task, or deploy a Dart workflow service.
 license: MIT
 compatibility: Requires Node 18+ and the Render CLI for local development. No Dart installation needed — render-dart fetches a pinned SDK. Render Workflows is in beta.
 metadata:
@@ -10,6 +10,9 @@ metadata:
 ---
 
 # Dart on Render Workflows
+
+**Unofficial.** A community package, not affiliated with, endorsed by, or
+supported by Render. Do not present it as Render's own tooling.
 
 Render has no Dart runtime. `render-dart` compiles Dart task bodies to
 JavaScript with `dart compile js` and registers them through Render's own
