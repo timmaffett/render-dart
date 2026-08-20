@@ -10,10 +10,7 @@
 
 [![Render](https://raw.githubusercontent.com/timmaffett/render-dart/main/doc/render-logo.png)](https://render.com)
 
-<sub>The Render name and logo are trademarks of Render Services, Inc.
-The mark itself is unmodified, shown on white with the clear space
-Render's brand kit specifies, referentially — to identify the service
-these packages work with, not to suggest any endorsement.</sub>
+[\*note](#note)
 
 Write [Render Workflows](https://render.com/docs/workflows) tasks in **Dart**,
 on [Render](https://render.com).
@@ -600,3 +597,10 @@ Use *Clear build cache & deploy* in the Dashboard to force a clean fetch.
 ## Licence
 
 MIT
+
+## Note
+
+\* The Render name and logo are trademarks of Render Services, Inc. The mark
+itself is unmodified, shown on white with the clear space Render's brand kit
+specifies, referentially — to identify the service these packages work with,
+not to suggest any endorsement.
