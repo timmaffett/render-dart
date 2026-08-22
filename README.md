@@ -150,6 +150,8 @@ SDK when none is present.
 | `render-dart build` | Compile `tasks.dart` to `build/tasks.js`, skipping if fresh |
 | `render-dart dev` | Build, then start Render's local task server |
 | `render-dart init [dir] [--template <name>]` | Scaffold a new project from an [example](#examples-which-are-also-templates) |
+| `render-dart dart` | Which Dart this project will use, and why |
+| `render-dart dart --list` | Every version the archive offers |
 
 `--template` takes any directory name under
 [`examples/`](examples) — `default` (the default), `http`, `native`,
@@ -192,6 +194,56 @@ override what the source declared:
 local tool sitting beside the workflow rather than running on it, like the
 seeder in the `postgres` example. Narrower than `allowDartIo: true`, which
 switches the check off for task code too.
+
+## Choosing a Dart version
+
+Three places, highest first. The flag is for trying one once, the environment
+for varying a build without a commit — Render's dashboard sets those — and
+`package.json` for the answer that should travel with the project:
+
+```bash
+npx render-dart build --dart-version 3.12.2
+RENDER_DART_VERSION=3.12.2 npx render-dart build
+```
+
+```json
+"renderDart": { "dartVersion": "3.12.2" }
+```
+
+A version can be exact, `latest`, or a channel name — `stable`, `beta` or
+`dev`. An exact version needs no network to interpret, so a pinned project
+keeps building when the archive is unreachable; an alias is resolved against
+the archive on each build, which is the point of asking for one.
+
+```bash
+npx render-dart dart          # what this project will use, and why
+npx render-dart dart --list   # 176 stable releases, newest first
+```
+
+**A pin set explicitly wins over a Dart already on `PATH`.** If they differ, the
+requested version is downloaded and used. Only the built-in default defers to a
+local toolchain — it exists so a first build on Render has something to fetch,
+not to override a Dart you installed deliberately.
+
+Before 0.8.0 that was not true: the pin was consulted only when downloading, so
+it worked on a first Render build and was silently ignored everywhere else. On a
+laptop `PATH` always won, and on later Render builds whatever had been vendored
+first won for ever, because the cache key was "does the directory exist". If
+setting `dartVersion` ever appeared to do nothing, that is why. The vendored SDK
+now records its version and is replaced when the pin changes.
+
+Every build says which Dart it used and where it came from:
+
+```
+[render-dart] Dart 3.12.2 requested by RENDER_DART_VERSION
+[render-dart] using Dart 3.12.2 (downloaded)
+```
+
+Downloads are checked against the archive's published SHA-256 before being
+unpacked. The hash is computed while the archive streams to disk, so it costs no
+extra I/O — 0.18s of CPU for a 228 MB file, against roughly 30s to fetch it.
+Releases old enough to predate the published sums say so rather than implying a
+check happened.
 
 ## Using pub.dev packages
 

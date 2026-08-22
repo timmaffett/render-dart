@@ -8,11 +8,15 @@ const path = require('node:path');
 
 const { version } = require('../package.json');
 const { resolveDart } = require('./toolchain/dart-sdk');
+const {
+  CHANNELS,
+  DEFAULT_DART_VERSION,
+  listVersions,
+  requestedVersion,
+} = require('./toolchain/dart-version');
 const { compile, findDartIoImports, isFresh, pubGet } = require('./toolchain/compile');
 const { nativeEntries, buildNative, writeGeneratedIgnores } = require('./toolchain/native');
 const { generate, ensureRuntimeFile } = require('./toolchain/generate');
-
-const DEFAULT_DART_VERSION = '3.13.0';
 
 const log = (m) => console.log(`[render-dart] ${m}`);
 const fail = (m) => {
@@ -32,7 +36,10 @@ async function config(root) {
   return {
     entry: path.resolve(root, c.entry ?? 'tasks.dart'),
     out: path.resolve(root, c.out ?? 'build/tasks.js'),
-    dartVersion: c.dartVersion ?? DEFAULT_DART_VERSION,
+    // Left undefaulted on purpose: the flag and the environment outrank this,
+    // and requestedVersion() cannot tell "unset" from "set to the default" if
+    // the default is applied here.
+    dartVersion: c.dartVersion,
     optimize: c.optimize ?? 'O2',
     sourceMaps: c.sourceMaps ?? false,
     allowDartIo: c.allowDartIo ?? false,
@@ -44,7 +51,7 @@ async function config(root) {
   };
 }
 
-async function build(root, { force = false } = {}) {
+async function build(root, { force = false, dartVersion } = {}) {
   const c = await config(root);
 
   if (!existsSync(c.entry)) {
@@ -98,9 +105,17 @@ async function build(root, { force = false } = {}) {
     }
   }
 
-  const dart = await resolveDart({
+  const asked = requestedVersion({
+    flag: dartVersion,
+    env: process.env.RENDER_DART_VERSION,
+    config: c.dartVersion,
+  });
+  if (asked.explicit) log(`Dart ${asked.version} requested by ${asked.from}`);
+
+  const { dart } = await resolveDart({
     root,
-    version: c.dartVersion,
+    version: asked.version,
+    explicit: asked.explicit,
     log,
   });
 
@@ -152,7 +167,7 @@ async function build(root, { force = false } = {}) {
 
 /** Builds, then hands off to the Render CLI's local task server. */
 async function dev(root, args) {
-  await build(root);
+  await build(root, { dartVersion: flagValue(args, '--dart-version') });
 
   const startCommand = args.length > 0 ? args : ['node', 'index.js'];
   log(`starting local task server: render workflows dev -- ${startCommand.join(' ')}`);
@@ -276,13 +291,67 @@ build command "npm install && npm run build", start command "npm start".
 `);
 }
 
+/** The value after `--name`, or after `--name=`. */
+function flagValue(args, name) {
+  const i = args.indexOf(name);
+  if (i !== -1 && args[i + 1] && !args[i + 1].startsWith('-')) return args[i + 1];
+  const inline = args.find((a) => a.startsWith(`${name}=`));
+  return inline ? inline.slice(name.length + 1) : undefined;
+}
+
+/** `render-dart dart` — what is available, and what this project will use. */
+async function dartInfo(root, args) {
+  if (args.includes('--list')) {
+    const channel = flagValue(args, '--channel') ?? 'stable';
+    const versions = await listVersions(channel);
+    const limit = Number(flagValue(args, '--limit') ?? 20);
+    console.log(`Dart ${channel} releases (${versions.length} total):\n`);
+    for (const v of versions.slice(0, limit)) console.log(`  ${v}`);
+    if (versions.length > limit) {
+      console.log(`\n  ... ${versions.length - limit} older, --limit N for more`);
+    }
+    console.log(
+      `\nPin one with --dart-version, RENDER_DART_VERSION, or\n` +
+        `"renderDart": { "dartVersion": "..." } in package.json.\n` +
+        `"latest" and the channel names ${CHANNELS.join(', ')} also work.`,
+    );
+    return;
+  }
+
+  // No flag: report what this project would actually use, which is the
+  // question people are usually asking.
+  const c = await config(root);
+  const asked = requestedVersion({
+    flag: flagValue(args, '--dart-version'),
+    env: process.env.RENDER_DART_VERSION,
+    config: c.dartVersion,
+  });
+  console.log(
+    `requested: ${asked.version}` +
+      (asked.explicit ? `  (from ${asked.from})` : '  (built-in default)'),
+  );
+  const resolved = await resolveDart({
+    root,
+    version: asked.version,
+    explicit: asked.explicit,
+    fetch: false,
+    log: () => {},
+  });
+  console.log(`resolved:  ${resolved.version ?? 'unknown'}  (${resolved.source})`);
+  console.log(`default:   ${DEFAULT_DART_VERSION}`);
+  console.log('\nrender-dart dart --list [--channel beta] [--limit N]');
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   const root = process.cwd();
 
   switch (command) {
     case 'build':
-      await build(root, { force: args.includes('--force') });
+      await build(root, {
+        force: args.includes('--force'),
+        dartVersion: flagValue(args, '--dart-version'),
+      });
       break;
     case 'dev':
       await dev(root, args);
@@ -290,14 +359,19 @@ async function main() {
     case 'init':
       await init(root, args);
       break;
+    case 'dart':
+      await dartInfo(root, args);
+      break;
     default:
       console.log(`render-dart — write Render Workflows tasks in Dart
 
 Usage:
-  render-dart build [--force]   Compile tasks.dart to build/tasks.js
+  render-dart build [--force] [--dart-version <v>]
+                                Compile tasks.dart to build/tasks.js
   render-dart dev [-- cmd...]   Build, then run the local task server
   render-dart init [dir] [--template <name>]
                                 Scaffold a new Dart workflow project
+  render-dart dart [--list]     Which Dart this project uses, or what exists
 
 Configure via "renderDart" in package.json:
   entry, out, dartVersion, optimize, sourceMaps, allowDartIo, allowDartIoIn,

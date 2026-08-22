@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.8.0
+
+**The Dart version pin now pins.** `renderDart.dartVersion` existed before and
+was consulted only on the download path, so it worked on a first Render build
+and was silently ignored everywhere else: on a laptop the Dart on `PATH` always
+won, and on later Render builds whatever had been vendored first won for ever,
+because the cache key was "does the directory exist". Setting it appeared to do
+nothing, which is exactly what it did.
+
+A version asked for explicitly is now honoured wherever the build runs: if
+`PATH` holds a different one, the requested version is downloaded. The built-in
+default still defers to a local toolchain — it exists so a first build has
+something to fetch, not to override a Dart you installed on purpose.
+
+- **Three places to set it**, highest first: `--dart-version`,
+  `RENDER_DART_VERSION`, `renderDart.dartVersion`.
+- **`latest` and channel names** — `stable`, `beta`, `dev` — as well as exact
+  versions. An exact version is interpreted without touching the network, so a
+  pinned project still builds when the archive is unreachable.
+- **`render-dart dart`** reports which Dart the project will use and where it
+  comes from; **`--list`** shows what the archive offers, 176 stable releases
+  today.
+- **The vendored SDK records its version** and is replaced when the pin changes.
+- **Every build says which Dart it used**, and whether it came from `PATH`, the
+  vendored copy, or a download. That alone answers the question that prompted
+  all of this.
+- **Downloads are verified** against the archive's published SHA-256 before
+  being unpacked, hashed while streaming so it costs no extra I/O — 0.18s of CPU
+  for a 228 MB archive against roughly 30s to fetch it.
+
 ## 0.7.1
 
 - Fixes a dead link on the package page. The Postgres example pointed at

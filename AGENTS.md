@@ -59,6 +59,28 @@ there. This was measured, not reasoned about.
 Defaulting them means config always wins and the `@NativeTask` annotation never
 applies.
 
+## The Dart version
+
+Two files, and the split matters. `toolchain/dart-version.js` answers *what was
+asked for* — precedence, aliases, the archive listing. `toolchain/dart-sdk.js`
+answers *where a Dart is* — vendored, on `PATH`, or downloaded. They were one
+concern once, which is how the pin came to be consulted only on the download
+path and to be silently ignored everywhere else.
+
+`requestedVersion` returns `explicit`, and that flag carries the whole design:
+a version someone typed must beat a Dart on `PATH`, and the built-in default
+must not. Do not collapse the two by defaulting `dartVersion` in `config()` —
+then nothing downstream can tell "unset" from "set to the default".
+
+The vendored SDK records its version in `node_modules/.dart-sdk/VERSION`.
+Without that the cache key is directory existence and changing the pin does
+nothing on any machine that has built once, including every Render build after
+the first.
+
+`render-dart dart` passes `fetch: false`. It once shared the build path's
+resolver and a plain query downloaded 228 MB and unpacked 624 MB. A question
+must not install anything.
+
 ## Changing the Dart side
 
 `template/render_dart.dart` and `template/native_task.dart` are copied into
